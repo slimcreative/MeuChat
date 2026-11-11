@@ -14,7 +14,7 @@ android {
         versionCode = 1
         versionName = "0.1"
 
-        val proxy = System.getenv("PROXY_URL")
+        val proxy = System.getenv("PROXY_URL")?.takeIf { it.isNotBlank() }
             ?: (project.findProperty("PROXY_URL") as String?)
             ?: "https://SEU-PROXY.exemplo.com/reply-screen"
         buildConfigField("String", "PROXY_URL", "\"$proxy\"")
