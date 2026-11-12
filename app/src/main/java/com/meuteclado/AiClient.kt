@@ -48,7 +48,13 @@ object AiClient {
             val body = res.body?.string().orEmpty()
             if (!res.isSuccessful) throw IOException("API ${res.code}: ${body.take(200)}")
 
-            val reply = JSONObject(body).getJSONArray("content").getJSONObject(0).getString("text")
+            val content = JSONObject(body).getJSONArray("content")
+            var reply: String? = null
+            for (i in 0 until content.length()) {
+                val block = content.getJSONObject(i)
+                if (block.optString("type") == "text") reply = block.getString("text")
+            }
+            if (reply == null) throw IOException("resposta sem texto")
             val json = JSONObject(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1))
             val arr = json.getJSONArray("options")
             return List(arr.length()) { arr.getString(it) }
