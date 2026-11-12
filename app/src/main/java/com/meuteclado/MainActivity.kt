@@ -128,7 +128,11 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 
+    /** Coluna já vertical: os filhos entram ocupando a largura toda. */
+    private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
     private fun page(content: LinearLayout, fill: Boolean = false) = ScrollView(this).apply {
+        fitsSystemWindows = true  // não entra embaixo da barra de status
         setBackgroundColor(BG)
         isVerticalScrollBarEnabled = false
         isFillViewport = fill
@@ -185,7 +189,7 @@ class MainActivity : Activity() {
             stopService(Intent(this, CaptureService::class.java))
             status.postDelayed({ refresh() }, 300)
         }
-        return page(LinearLayout(this).apply {
+        return page(column().apply {
             addView(header)
             addView(a11yCard)
             addView(section("TOQUE NO MODO PARA LIGAR A BOLHA"))
@@ -262,16 +266,22 @@ class MainActivity : Activity() {
             setPadding(0, dp(6), 0, dp(6))
             setOnClickListener { showHome() }
         }
-        return page(LinearLayout(this).apply {
+        return page(column().apply {
             addView(back)
 
-            addView(section("CHAVE DA API"))
-            addView(keyField)
-            addView(pill("Salvar chave", ACCENT) {
-                Prefs.saveApiKey(this@MainActivity, keyField.text.toString())
-                toast("Chave salva")
-                refresh()
-            })
+            addView(section("MEU JEITO DE RESPONDER"))
+            addView(label(
+                "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
+                    "Ex.: escrevo tudo em minúsculo, sem ponto final · uso kkkk e mano · mensagens bem curtas.",
+                13f, MUTED
+            ).apply { setPadding(dp(4), 0, 0, dp(10)) })
+            addView(styleField)
+            addView(pill("Salvar meu jeito", ACCENT) {
+                Prefs.saveStyle(this@MainActivity, styleField.text.toString())
+                toast("Salvo")
+    
+            addView(section("APPS COM A BOLHA"))
+            addView(appsCard)
 
             addView(section("PERMISSÕES"))
             addView(permStatus)
@@ -284,32 +294,28 @@ class MainActivity : Activity() {
                 )
             })
 
-            addView(section("APPS COM A BOLHA"))
-            addView(appsCard)
-
-            addView(section("MEU JEITO DE RESPONDER"))
-            addView(label(
-                "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
-                    "Ex.: escrevo tudo em minúsculo, sem ponto final · uso kkkk e mano · mensagens bem curtas.",
-                13f, MUTED
-            ).apply { setPadding(dp(4), 0, 0, dp(10)) })
-            addView(styleField)
-            addView(pill("Salvar meu jeito", ACCENT) {
-                Prefs.saveStyle(this@MainActivity, styleField.text.toString())
-                toast("Salvo")
+            addView(section("CHAVE DA API"))
+            addView(keyField)
+            addView(pill("Salvar chave", ACCENT) {
+                Prefs.saveApiKey(this@MainActivity, keyField.text.toString())
+                toast("Chave salva")
+                refresh()
             })
+        })
         })
     }
 
     private fun showHome() {
         screen = 0
         setContentView(home)
+        home.requestApplyInsets()
         refresh()
     }
 
     private fun showSettings() {
         screen = 1
         setContentView(settings)
+        settings.requestApplyInsets()
         refresh()
     }
 
@@ -324,6 +330,7 @@ class MainActivity : Activity() {
         screen = 2
         val v = appsView ?: buildApps().also { appsView = it }
         setContentView(v)
+        v.requestApplyInsets()
     }
 
     private fun buildApps(): View {
@@ -341,7 +348,7 @@ class MainActivity : Activity() {
                     .thenBy { it.second.lowercase() }
             )
 
-        val list = LinearLayout(this)
+        val list = column()
         list.addView(label("←  Apps com a bolha", 20f, Color.WHITE, true).apply {
             setPadding(0, dp(6), 0, dp(6))
             setOnClickListener { showSettings() }

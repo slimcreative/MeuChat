@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.Icon
 import android.hardware.display.DisplayManager
@@ -470,7 +471,8 @@ class CaptureService : Service() {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = round(CHIP, 14)
-            layoutParams = LinearLayout.LayoutParams(dp(30), dp(28)).apply { setMargins(dp(5), 0, 0, 0) }
+            background = round(CHIP, 16)
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply { setMargins(dp(6), 0, 0, 0) }
             setOnClickListener { onClick() }
         }
 
@@ -506,8 +508,8 @@ class CaptureService : Service() {
     private fun showPanel() {
         removePanel()
         val sw = resources.displayMetrics.widthPixels
-        val pw = dp(Prefs.panelW(this)).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), sw - dp(8)))
-        fs = (pw.toFloat() / dp(264)).coerceIn(0.9f, 1.4f)
+        val pw = dp(Prefs.panelW(this)).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), sw - dp(16)))
+        fs = (pw.toFloat() / dp(264)).coerceIn(0.95f, 1.2f)
 
         val topics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val tones = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -539,14 +541,27 @@ class CaptureService : Service() {
             }
         }
 
+        // Cabeçalho: nome do modo à esquerda, olho e recarregar à direita
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(hScroll(topics).apply {
+            addView(TextView(this@CaptureService).apply {
+                text = "Modo ${Prefs.mode(this@CaptureService)}"
+                textSize = 13f * fs
+                setTextColor(0xFFB8C0CC.toInt())
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(4), 0, 0, 0)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(eye)
             addView(refresh)
+        }
+        val row = { v: View ->
+            v.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, dp(8), 0, 0) }
+            }
         }
 
         val note = TextView(this).apply {
@@ -630,14 +645,11 @@ class CaptureService : Service() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(10))
-            background = round(0xF2171B22.toInt(), 18, 0x33FFFFFF)
+            setPadding(dp(12), dp(10), dp(12), dp(4))
+            background = round(0xF7141820.toInt(), 20, 0x33FFFFFF)
             addView(top)
-            addView(hScroll(tones).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, dp(6), 0, 0) }
-            })
+            addView(row(hScroll(topics)))
+            addView(row(hScroll(tones)))
             addView(askRow)
             addView(teach)
             addView(thumb)
@@ -679,7 +691,7 @@ class CaptureService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val m = resources.displayMetrics
                     val dx = (e.rawX - gx).toInt() * (if (panelOnRight) 1 else -1)
-                    lp.width = (gw + dx).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), m.widthPixels - dp(8)))
+                    lp.width = (gw + dx).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), m.widthPixels - dp(16)))
                     scroll.maxHeight = (gh + (e.rawY - gy).toInt())
                         .coerceIn(dp(90), maxOf(dp(90), (m.heightPixels * 0.7f).toInt()))
                     scroll.requestLayout()
@@ -724,15 +736,28 @@ class CaptureService : Service() {
         val bl = bubbleLp ?: return false
         val m = resources.displayMetrics
         val size = dp(BUBBLE_DP)
-        val gap = dp(6)
-        val leftSide = bl.x + size / 2 < m.widthPixels / 2
-        val x = (if (leftSide) bl.x + size + gap else bl.x - lp.width - gap)
-            .coerceIn(dp(4), maxOf(dp(4), m.widthPixels - lp.width - dp(4)))
-        val anchorY = if (editing) minOf(bl.y, dp(70)) else bl.y
-        val y = anchorY.coerceIn(0, maxOf(0, m.heightPixels - panelHeight - dp(72)))
-        if (x == lp.x && y == lp.y) return false
-        lp.x = x
-        lp.y = y
+        val gap = dp(8)
+        val x: Int
+        var y: Int
+        if (m.widthPixels - size - gap - dp(4) >= lp.width) {
+            // Cabe ao lado da bolha
+            val leftSide = bl.x + size / 2 < m.widthPixels / 2
+            x = if (leftSide) bl.x + size + gap else bl.x - lp.width - gap
+            y = bl.y
+            if (editing) y = minOf(y, dp(70))
+        } else {
+            // Telinha larga: fica embaixo da bolha (ou em cima, se não couber), nunca por baixo dela
+            x = (m.widthPixels - lp.width) / 2
+            val below = bl.y + size + gap
+            val above = bl.y - gap - panelHeight
+            y = if (below + panelHeight <= m.heightPixels - dp(24) || above < 0) below else above
+            if (editing) y = minOf(y, dp(90))
+        }
+        val cx = x.coerceIn(0, maxOf(0, m.widthPixels - lp.width))
+        val cy = y.coerceIn(0, maxOf(0, m.heightPixels - panelHeight - dp(24)))
+        if (cx == lp.x && cy == lp.y) return false
+        lp.x = cx
+        lp.y = cy
         return true
     }
 
@@ -872,8 +897,10 @@ class CaptureService : Service() {
         results.removeAllViews()
         setStatus("")
         noteView?.let {
+            // Sem sugestões, o cartão de resposta já explica: não repete na leitura
+            val show = r.reading.isNotEmpty() && r.options.isNotEmpty()
             it.text = r.reading
-            it.visibility = if (r.reading.isNotEmpty()) View.VISIBLE else View.GONE
+            it.visibility = if (show) View.VISIBLE else View.GONE
         }
         answerView?.let {
             it.text = r.answer

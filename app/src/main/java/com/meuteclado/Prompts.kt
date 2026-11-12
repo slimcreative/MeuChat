@@ -1,5 +1,9 @@
 package com.meuteclado
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 object Prompts {
 
     /** Um modo de conversa: muda o estilo da IA, os temas e os tons disponíveis na telinha. */
@@ -12,12 +16,16 @@ object Prompts {
 
     const val DEFAULT_MODE = "Casual"
 
+    /** Tema que começa uma conversa do zero, sem depender das últimas mensagens. */
+    const val START = "Iniciar"
+
     val modes: LinkedHashMap<String, Mode> = linkedMapOf(
         "Casual" to Mode(
             desc = "Amigos, família, dia a dia",
             style = "Contexto: conversa casual com amigos, família ou conhecidos. Soe natural e descontraído, como a pessoa falaria no dia a dia.",
             topics = linkedMapOf(
                 "Resposta" to "Responda à última mensagem recebida de forma natural, que mantenha a conversa viva.",
+                START to "Uma mensagem leve para puxar conversa com um amigo, familiar ou conhecido.",
                 "Puxar assunto" to "Puxe um assunto novo ou retome a conversa de forma leve, usando algo que apareceu na tela.",
                 "Entrelinhas" to "Leia o que a pessoa pode estar sentindo ou querendo dizer e sugira respostas que respondam ao sentimento, não só ao texto literal.",
                 "Humor" to "Responda com humor leve, uma brincadeira que combine com o clima da conversa.",
@@ -30,6 +38,7 @@ object Prompts {
             style = "Contexto: conversa profissional (cliente, fornecedor, chefe ou colega). Escreva com clareza e educação, sem gírias, com português correto, frases objetivas e postura de quem resolve. Pode ser um pouco mais longo que uma mensagem casual quando precisar explicar algo.",
             topics = linkedMapOf(
                 "Resposta" to "Responda à última mensagem de forma profissional, clara e resolutiva.",
+                START to "Uma mensagem educada para iniciar o contato com um cliente, fornecedor ou colega: cumprimento e o motivo do contato em uma linha.",
                 "Atender cliente" to "Atenda o cliente: responda a dúvida ou pedido, mostre disposição e indique o próximo passo concreto.",
                 "Orçamento" to "Apresente ou responda sobre preço, prazo ou proposta de forma clara e segura, valorizando o serviço. Não invente valores: use os que aparecem na tela ou deixe [valor] para o usuário preencher.",
                 "Cobrar" to "Cobre um pagamento, prazo ou retorno pendente de forma educada e firme, sem constranger.",
@@ -43,6 +52,7 @@ object Prompts {
             style = "Contexto: o usuário quer convencer a outra pessoa. Use persuasão honesta: mostre o benefício do ponto de vista dela, use fatos e exemplos concretos que aparecem na conversa, reciprocidade, prova social real, antecipe a objeção e termine com um próximo passo fácil de aceitar. Não invente fatos, números ou urgência que não existem.",
             topics = linkedMapOf(
                 "Resposta" to "Responda à última mensagem conduzindo a conversa para o que o usuário quer.",
+                START to "Uma mensagem de abertura que desperte interesse e dê vontade de responder, preparando o terreno para o que o usuário quer propor.",
                 "Convencer" to "Apresente o melhor argumento para a pessoa topar a ideia, focando no que ela ganha.",
                 "Quebrar objeção" to "Identifique a objeção ou dúvida da pessoa e responda a ela diretamente, sem bater de frente.",
                 "Fechar" to "Peça a decisão: proponha o próximo passo de forma simples, com uma pergunta fácil de responder com sim.",
@@ -55,6 +65,7 @@ object Prompts {
             style = "Contexto: modo estratégico. Antes de escrever, leia o jogo: o que cada lado quer, quem precisa mais de quem, e o que a outra pessoa está tentando conseguir. Escreva de forma calculada: poucas palavras, calma, sem demonstrar ansiedade nem necessidade, sem revelar mais do que precisa, sem ceder de graça, mantendo as opções do usuário abertas e fazendo a outra pessoa se posicionar primeiro. Elegante e controlado, nunca agressivo. Estratégia aqui é leitura e posicionamento: sem mentira, sem ameaça e sem humilhar ninguém.",
             topics = linkedMapOf(
                 "Resposta" to "Responda à última mensagem protegendo a posição do usuário e mantendo o controle da conversa.",
+                START to "Uma mensagem de abertura calma e segura, que faça a outra pessoa responder sem o usuário parecer que precisa dela.",
                 "Ler o jogo" to "Na 'leitura', diga em uma frase a intenção real por trás da mensagem da pessoa e o que ela quer conseguir. Depois sugira respostas que levem isso em conta.",
                 "Negociar" to "Negocie: não aceite a primeira condição, peça algo em troca do que ceder e faça a outra pessoa abrir a proposta dela.",
                 "Impor limite" to "Coloque um limite claro, com calma e sem se justificar demais.",
@@ -68,7 +79,7 @@ object Prompts {
             style = "Contexto: conversa de paquera. Crie interesse com leveza e confiança, sem parecer carente e sem forçar.",
             topics = linkedMapOf(
                 "Resposta" to "Responda à última mensagem recebida de forma que mantenha a conversa viva e dê vontade de continuar.",
-                "Abertura" to "Escreva a PRIMEIRA mensagem para começar a conversa com esta pessoa, com base no contexto visível (perfil, foto, história, interesses). Curta, natural, sem clichê.",
+                START to "Uma mensagem para puxar papo com a pessoa: natural, sem clichê e sem parecer carente. Se o perfil, a foto ou os interesses dela aparecerem na tela, use isso.",
                 "Entrelinhas" to "Leia o que a pessoa pode estar sentindo ou querendo dizer e sugira respostas que respondam ao sentimento, não só ao texto literal.",
                 "Persuasão" to "Conduza a conversa para o que o usuário quer (ela topar o convite, continuar a conversa, dar uma chance): mostre o que ela ganha com isso, use algo que ela mesma disse, antecipe a dúvida dela e termine com um passo fácil de aceitar. Persuasão honesta, sem insistir se ela já disse não.",
                 "Flerte" to "Crie interesse leve: um elogio específico, uma provocação brincalhona ou uma pergunta que convide a pessoa a falar de si.",
@@ -110,6 +121,19 @@ object Prompts {
             "Se for uma pergunta ou um pedido de opinião, responda em 'resposta', direto e prático, em até 4 frases, " +
             "e coloque em 'options' mensagens que ele pode enviar, se fizer sentido (pode ficar vazio). " +
             "Se for uma instrução sobre o que ele quer dizer, siga essa instrução ao escrever as 'options' e deixe 'resposta' vazio."
+        if (topic == START) {
+            val now = SimpleDateFormat("EEEE, HH:mm", Locale("pt", "BR")).format(Date())
+            return listOf(
+                "O usuário quer INICIAR uma conversa agora. Não responda à última mensagem.",
+                "Agora é $now: use o cumprimento certo para o horário (bom dia, boa tarde, boa noite) quando combinar.",
+                "Tarefa: $task",
+                "Se o print mostrar com quem é a conversa ou um histórico, personalize (nome, último assunto, tempo sem se falar). " +
+                    "Se não mostrar conversa nenhuma, escreva boas aberturas mesmo assim e deixe 'leitura' vazio.",
+                "Tom: $tone.",
+                extra,
+                out
+            ).filter { it.isNotEmpty() }.joinToString("\n")
+        }
         return listOf(
             "Este é o print da conversa.",
             "1) Leia as últimas mensagens e entenda o que a outra pessoa quer ou sente.",
