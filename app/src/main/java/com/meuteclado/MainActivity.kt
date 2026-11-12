@@ -3,7 +3,9 @@ package com.meuteclado
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -11,11 +13,10 @@ import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
-import android.widget.Button
+import android.view.View
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -24,71 +25,32 @@ class MainActivity : Activity() {
 
     private val REQ_OVERLAY = 1
     private val REQ_PROJECTION = 2
+
+    private val BG = 0xFF0B0C11.toInt()
+    private val CARD = 0xFF171A22.toInt()
+    private val FIELD = 0xFF1F232D.toInt()
+    private val ACCENT = 0xFFFF8A1E.toInt()
+    private val MUTED = 0xFF8D96A3.toInt()
+
+    private lateinit var home: View
+    private lateinit var settings: View
     private lateinit var status: TextView
+    private lateinit var modeList: LinearLayout
+    private lateinit var stopBtn: TextView
+    private lateinit var permStatus: TextView
+    private lateinit var keyField: EditText
     private lateinit var styleField: EditText
+    private var inSettings = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val pad = (16 * resources.displayMetrics.density).toInt()
+        window.statusBarColor = BG
+        window.navigationBarColor = BG
+        window.decorView.setBackgroundColor(BG)
 
-        status = TextView(this).apply { textSize = 15f }
-        val keyField = EditText(this).apply {
-            hint = "Chave da API (sk-ant-...)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(Prefs.apiKey(this@MainActivity))
-        }
-
-        styleField = EditText(this).apply {
-            hint = "Como você escreve?"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            minLines = 3
-            maxLines = 10
-            gravity = Gravity.TOP
-        }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            addView(status)
-            addView(keyField)
-            addView(button("Salvar chave") {
-                Prefs.saveApiKey(this@MainActivity, keyField.text.toString())
-                refresh()
-            })
-            addView(button("Ativar bolha") { startFlow() })
-            addView(button("Desativar") {
-                stopService(Intent(this@MainActivity, CaptureService::class.java))
-                refresh()
-            })
-            addView(button("Abrir acessibilidade (inserir e enviar)") {
-                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Modo de conversa"
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, pad, 0, pad / 2)
-            })
-            addView(modePicker())
-            addView(TextView(this@MainActivity).apply {
-                text = "Meu jeito de responder"
-                textSize = 18f
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(0, pad, 0, pad / 2)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
-                    "Ex.: escrevo tudo em minúsculo, sem ponto final · uso kkkk e mano · mensagens bem curtas · nunca uso emoji."
-                textSize = 13f
-            })
-            addView(styleField)
-            addView(button("Salvar meu jeito") {
-                Prefs.saveStyle(this@MainActivity, styleField.text.toString())
-                Toast.makeText(this@MainActivity, "Salvo", Toast.LENGTH_SHORT).show()
-            })
-        }
-        setContentView(ScrollView(this).apply { addView(root) })
+        home = buildHome()
+        settings = buildSettings()
+        showHome()
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
@@ -101,32 +63,223 @@ class MainActivity : Activity() {
         refresh()
     }
 
-    /** Lista de modos: a escolha vale na próxima vez que a telinha abrir. */
-    private fun modePicker(): RadioGroup {
-        val group = RadioGroup(this)
-        val current = Prefs.mode(this)
-        Prompts.modes.entries.forEachIndexed { i, (name, mode) ->
-            group.addView(RadioButton(this).apply {
-                id = 100 + i
-                text = "$name\n${mode.desc}"
-                textSize = 15f
-                setPadding(0, 12, 0, 12)
-                isChecked = name == current
-                tag = name
-            })
-        }
-        group.setOnCheckedChangeListener { g, checkedId ->
-            val name = g.findViewById<RadioButton>(checkedId)?.tag as? String
-            if (name != null) Prefs.saveMode(this, name)
-        }
-        return group
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (inSettings) showHome() else super.onBackPressed()
     }
 
-    private fun button(label: String, onClick: () -> Unit): Button =
-        Button(this).apply {
-            text = label
+    // ---------- peças de interface ----------
+
+    private fun dp(n: Int): Int = (n * resources.displayMetrics.density).toInt()
+
+    private fun round(color: Int, radiusDp: Int, stroke: Int = 0) = GradientDrawable().apply {
+        setColor(color)
+        cornerRadius = dp(radiusDp).toFloat()
+        if (stroke != 0) setStroke(dp(2), stroke)
+    }
+
+    private fun label(text: String, size: Float, color: Int, bold: Boolean = false) =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            setTextColor(color)
+            if (bold) setTypeface(typeface, Typeface.BOLD)
+        }
+
+    private fun section(text: String) = label(text, 13f, MUTED, true).apply {
+        setPadding(dp(4), dp(22), 0, dp(8))
+    }
+
+    private fun pill(text: String, color: Int, onClick: () -> Unit) =
+        label(text, 15f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            background = round(color, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(10), 0, 0) }
             setOnClickListener { onClick() }
         }
+
+    private fun field(hintText: String) = EditText(this).apply {
+        hint = hintText
+        textSize = 15f
+        setTextColor(Color.WHITE)
+        setHintTextColor(MUTED)
+        background = round(FIELD, 12)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+    }
+
+    private fun fox(sizeDp: Int) = ImageView(this).apply {
+        setImageResource(R.drawable.fox_bubble)
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(0xFF1A1438.toInt())
+        }
+        clipToOutline = true
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+    }
+
+    private fun page(content: LinearLayout) = ScrollView(this).apply {
+        setBackgroundColor(BG)
+        isVerticalScrollBarEnabled = false
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(dp(18), dp(18), dp(18), dp(28))
+        addView(content)
+    }
+
+    // ---------- tela principal ----------
+
+    private fun buildHome(): View {
+        status = label("", 13f, MUTED)
+        val titles = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(label("Resposta IA", 22f, Color.WHITE, true))
+            addView(status)
+        }
+        val gear = label("⚙", 24f, Color.WHITE).apply {
+            gravity = Gravity.CENTER
+            background = round(CARD, 14)
+            layoutParams = LinearLayout.LayoutParams(dp(46), dp(46))
+            setOnClickListener { showSettings() }
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(fox(50))
+            addView(titles)
+            addView(gear)
+        }
+        modeList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        stopBtn = pill("Desligar bolha", 0xFF3A2026.toInt()) {
+            stopService(Intent(this, CaptureService::class.java))
+            status.postDelayed({ refresh() }, 300)
+        }
+        return page(LinearLayout(this).apply {
+            addView(header)
+            addView(section("TOQUE NA BOLHA DO MODO PARA ABRIR"))
+            addView(modeList)
+            addView(stopBtn)
+        })
+    }
+
+    private fun renderModes() {
+        modeList.removeAllViews()
+        val current = Prefs.mode(this)
+        Prompts.modes.forEach { (name, mode) ->
+            val selected = name == current
+            val texts = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(label(name, 17f, Color.WHITE, true))
+                addView(label(mode.desc, 13f, MUTED))
+                if (selected) addView(label(
+                    if (CaptureService.running) "● ativo agora" else "● selecionado", 12f, ACCENT
+                ).apply { setPadding(0, dp(4), 0, 0) })
+            }
+            modeList.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(14), dp(14), dp(14))
+                background = round(CARD, 18, if (selected) ACCENT else 0)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, dp(10)) }
+                addView(texts)
+                addView(fox(48))
+                setOnClickListener { openMode(name) }
+            })
+        }
+    }
+
+    /** Toque no modo: guarda a escolha e liga a bolha já nesse modo. */
+    private fun openMode(name: String) {
+        Prefs.saveMode(this, name)
+        refresh()
+        if (Prefs.apiKey(this).isBlank()) {
+            toast("Salve a chave da API primeiro")
+            showSettings()
+            return
+        }
+        if (CaptureService.running) {
+            toast("Modo $name ativo")
+            moveTaskToBack(true)
+        } else {
+            startFlow()
+        }
+    }
+
+    // ---------- configurações ----------
+
+    private fun buildSettings(): View {
+        keyField = field("sk-ant-...").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(Prefs.apiKey(this@MainActivity))
+        }
+        styleField = field("Como você escreve?").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            minLines = 3
+            maxLines = 10
+            gravity = Gravity.TOP
+        }
+        permStatus = label("", 14f, Color.WHITE)
+        val back = label("←  Configurações", 20f, Color.WHITE, true).apply {
+            setPadding(0, dp(6), 0, dp(6))
+            setOnClickListener { showHome() }
+        }
+        return page(LinearLayout(this).apply {
+            addView(back)
+
+            addView(section("CHAVE DA API"))
+            addView(keyField)
+            addView(pill("Salvar chave", ACCENT) {
+                Prefs.saveApiKey(this@MainActivity, keyField.text.toString())
+                toast("Chave salva")
+                refresh()
+            })
+
+            addView(section("PERMISSÕES"))
+            addView(permStatus)
+            addView(pill("Acessibilidade (colocar no campo e enviar)", FIELD) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            })
+            addView(pill("Exibir sobre outros apps", FIELD) {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+                )
+            })
+
+            addView(section("MEU JEITO DE RESPONDER"))
+            addView(label(
+                "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
+                    "Ex.: escrevo tudo em minúsculo, sem ponto final · uso kkkk e mano · mensagens bem curtas.",
+                13f, MUTED
+            ).apply { setPadding(dp(4), 0, 0, dp(10)) })
+            addView(styleField)
+            addView(pill("Salvar meu jeito", ACCENT) {
+                Prefs.saveStyle(this@MainActivity, styleField.text.toString())
+                toast("Salvo")
+            })
+        })
+    }
+
+    private fun showHome() {
+        inSettings = false
+        setContentView(home)
+        refresh()
+    }
+
+    private fun showSettings() {
+        inSettings = true
+        setContentView(settings)
+        refresh()
+    }
+
+    // ---------- ligar a bolha ----------
 
     private fun startFlow() {
         if (!Settings.canDrawOverlays(this)) {
@@ -149,16 +302,24 @@ class MainActivity : Activity() {
                     .putExtra("code", resultCode)
                     .putExtra("data", data)
                 startForegroundService(i)
+                toast("Bolha ligada no modo ${Prefs.mode(this)}")
+                moveTaskToBack(true)
             }
         }
-        refresh()
+        status.postDelayed({ refresh() }, 400)
     }
 
     private fun refresh() {
-        val key = if (Prefs.apiKey(this).isNotBlank()) "salva" else "não definida"
-        val ov = if (Settings.canDrawOverlays(this)) "ok" else "pendente"
-        val sv = if (CaptureService.running) "ativa" else "inativa"
-        val ac = if (ReplyAccessibilityService.instance != null) "ativa" else "inativa"
-        status.text = "Chave da API: $key\nSobreposição: $ov\nBolha: $sv\nInserção automática: $ac"
+        val running = CaptureService.running
+        status.text = if (running) "Bolha ligada · modo ${Prefs.mode(this)}" else "Bolha desligada"
+        stopBtn.visibility = if (running) View.VISIBLE else View.GONE
+        renderModes()
+
+        val key = if (Prefs.apiKey(this).isNotBlank()) "salva ✓" else "não definida"
+        val ov = if (Settings.canDrawOverlays(this)) "ok ✓" else "pendente"
+        val ac = if (ReplyAccessibilityService.instance != null) "ativa ✓" else "inativa"
+        permStatus.text = "Chave da API: $key\nSobreposição: $ov\nAcessibilidade: $ac"
     }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 }
