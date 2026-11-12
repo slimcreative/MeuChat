@@ -31,7 +31,9 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -223,7 +225,7 @@ class CaptureService : Service() {
         wantShot = { bmp ->
             bub.visibility = View.VISIBLE
             lastShot = toJpegB64(bmp)
-            showPanel()
+            showPanel(bmp)
         }
         main.postDelayed({
             if (wantShot != null) {
@@ -234,16 +236,45 @@ class CaptureService : Service() {
         }, 2500)
     }
 
-    // ---------- painel: temas + tons ----------
+    // ---------- painel flutuante arrastável (abre a partir da bolha) ----------
 
-    private fun showPanel() {
+    private fun isMostlyBlack(bmp: Bitmap): Boolean {
+        var total = 0L
+        var n = 0
+        for (i in 0 until 10) for (j in 0 until 10) {
+            val px = bmp.getPixel(bmp.width * i / 10, bmp.height * j / 10)
+            total += ((px shr 16) and 0xFF) + ((px shr 8) and 0xFF) + (px and 0xFF)
+            n++
+        }
+        return total / (n * 3) < 8
+    }
+
+    private fun showPanel(shot: Bitmap) {
         removePanel()
+        val black = isMostlyBlack(shot)
+
+        val header = TextView(this).apply {
+            text = "⠿  arraste por aqui"
+            textSize = 12f
+            setTextColor(Color.GRAY)
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        val thumb = ImageView(this).apply {
+            setImageBitmap(Bitmap.createScaledBitmap(shot, dp(120), shot.height * dp(120) / shot.width, true))
+            layoutParams = LinearLayout.LayoutParams(dp(120), LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
         val status = TextView(this).apply {
-            text = "Tema: $selectedTopic · escolha o tom"
+            text = if (black) "Captura veio preta: este app bloqueia captura de tela"
+                   else "Tema: $selectedTopic · escolha o tom"
             textSize = 13f
             setTextColor(Color.DKGRAY)
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply {
+            addView(results)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(200))
+        }
 
         val topicRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         Prompts.topics.keys.forEach { topic ->
@@ -268,29 +299,57 @@ class CaptureService : Service() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(10), dp(6), dp(10), dp(10))
             background = GradientDrawable().apply {
                 setColor(Color.WHITE)
                 cornerRadius = dp(16).toFloat()
             }
+            addView(header)
+            addView(thumb)
             addView(HorizontalScrollView(this@CaptureService).apply { addView(topicRow) })
             addView(HorizontalScrollView(this@CaptureService).apply { addView(toneRow) })
             addView(status)
-            addView(results)
+            addView(scroll)
             addView(Button(this@CaptureService).apply {
                 text = "Fechar"
                 setOnClickListener { removePanel() }
             })
         }
 
-        val lp = overlayParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = Gravity.BOTTOM }
+        // Abre ao lado da bolha
+        val bl = bubbleLp
+        val lp = overlayParams(dp(300), WindowManager.LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = (bl?.x ?: 0) + dp(64)
+            y = bl?.y ?: dp(300)
+        }
+
+        // Arrastar pelo cabeçalho
+        var sx = 0
+        var sy = 0
+        var tx = 0f
+        var ty = 0f
+        header.setOnTouchListener { _, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    sx = lp.x; sy = lp.y
+                    tx = e.rawX; ty = e.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    lp.x = sx + (e.rawX - tx).toInt()
+                    lp.y = sy + (e.rawY - ty).toInt()
+                    wm.updateViewLayout(root, lp)
+                    true
+                }
+                else -> true
+            }
+        }
 
         wm.addView(root, lp)
         panel = root
-        // Traz a bolha de volta para o topo, para ela continuar arrastável
+
+        // Mantém a bolha por cima para continuar tocável e arrastável
         val b = bubble
         val blp = bubbleLp
         if (b != null && blp != null) {
