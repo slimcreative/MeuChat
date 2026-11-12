@@ -51,8 +51,6 @@ class CaptureService : Service() {
         @Volatile var running = false
     }
 
-    private val tones = listOf("formal", "casual", "engraçado", "carinhoso", "direto", "negociação")
-
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -65,6 +63,7 @@ class CaptureService : Service() {
 
     @Volatile private var wantShot: ((Bitmap) -> Unit)? = null
     private var lastShot: String? = null
+    private var selectedTopic = "Resposta"
 
     override fun onCreate() {
         super.onCreate()
@@ -230,19 +229,31 @@ class CaptureService : Service() {
         }, 2500)
     }
 
-    // ---------- painel de respostas ----------
+    // ---------- painel: temas + tons ----------
 
     private fun showPanel() {
         removePanel()
         val status = TextView(this).apply {
-            text = "Escolha o tom"
+            text = "Tema: $selectedTopic · escolha o tom"
             textSize = 13f
             setTextColor(Color.DKGRAY)
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
+        val topicRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        Prompts.topics.keys.forEach { topic ->
+            topicRow.addView(Button(this).apply {
+                text = topic
+                isAllCaps = false
+                setOnClickListener {
+                    selectedTopic = topic
+                    status.text = "Tema: $topic · escolha o tom"
+                }
+            })
+        }
+
         val toneRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        tones.forEach { tone ->
+        Prompts.tones.forEach { tone ->
             toneRow.addView(Button(this).apply {
                 text = tone
                 isAllCaps = false
@@ -257,6 +268,7 @@ class CaptureService : Service() {
                 setColor(Color.WHITE)
                 cornerRadius = dp(16).toFloat()
             }
+            addView(HorizontalScrollView(this@CaptureService).apply { addView(topicRow) })
             addView(HorizontalScrollView(this@CaptureService).apply { addView(toneRow) })
             addView(status)
             addView(results)
@@ -277,11 +289,19 @@ class CaptureService : Service() {
 
     private fun generate(tone: String, status: TextView, results: LinearLayout) {
         val shot = lastShot ?: return
-        status.text = "Gerando ($tone)..."
+        val key = Prefs.apiKey(this)
+        if (key.isBlank()) {
+            status.text = "Defina a chave da API no app principal"
+            return
+        }
+        val topic = selectedTopic
+        status.text = "Gerando ($topic · $tone)..."
         results.removeAllViews()
         scope.launch {
             try {
-                val options = withContext(Dispatchers.IO) { AiClient.replies(shot, tone) }
+                val options = withContext(Dispatchers.IO) {
+                    AiClient.replies(key, shot, topic, tone)
+                }
                 status.text = "Toque numa opção para inserir"
                 options.forEach { opt ->
                     results.addView(Button(this@CaptureService).apply {

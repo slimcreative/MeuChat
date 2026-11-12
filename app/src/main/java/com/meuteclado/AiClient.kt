@@ -15,18 +15,42 @@ object AiClient {
         .callTimeout(60, TimeUnit.SECONDS)
         .build()
 
-    /** Envia o print (JPEG em base64) e o tom ao proxy; devolve as opções de resposta. */
-    fun replies(imageB64: String, tone: String): List<String> {
-        val body = JSONObject()
-            .put("image", imageB64)
-            .put("tone", tone)
-            .toString()
-            .toRequestBody("application/json".toMediaType())
+    /** Manda o print + tema + tom direto para a API da Anthropic e devolve as opções. */
+    fun replies(apiKey: String, imageB64: String, topic: String, tone: String): List<String> {
+        val image = JSONObject()
+            .put("type", "image")
+            .put("source", JSONObject()
+                .put("type", "base64")
+                .put("media_type", "image/jpeg")
+                .put("data", imageB64))
+        val text = JSONObject()
+            .put("type", "text")
+            .put("text", Prompts.build(topic, tone))
 
-        val req = Request.Builder().url(BuildConfig.PROXY_URL).post(body).build()
+        val payload = JSONObject()
+            .put("model", "claude-haiku-5-5")
+            .put("max_tokens", 500)
+            .put("messages", JSONArray().put(
+                JSONObject()
+                    .put("role", "user")
+                    .put("content", JSONArray().put(image).put(text))
+            ))
+            .toString()
+
+        val req = Request.Builder()
+            .url("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", apiKey)
+            .header("anthropic-version", "2023-06-01")
+            .post(payload.toRequestBody("application/json".toMediaType()))
+            .build()
+
         http.newCall(req).execute().use { res ->
-            if (!res.isSuccessful) throw IOException("HTTP ${res.code}")
-            val arr = JSONArray(res.body!!.string())
+            val body = res.body?.string().orEmpty()
+            if (!res.isSuccessful) throw IOException("API ${res.code}: ${body.take(200)}")
+
+            val reply = JSONObject(body).getJSONArray("content").getJSONObject(0).getString("text")
+            val json = JSONObject(reply.substring(reply.indexOf('{'), reply.lastIndexOf('}') + 1))
+            val arr = json.getJSONArray("options")
             return List(arr.length()) { arr.getString(it) }
         }
     }
