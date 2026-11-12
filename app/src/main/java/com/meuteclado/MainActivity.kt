@@ -3,6 +3,7 @@ package com.meuteclado
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Typeface
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -12,6 +13,9 @@ import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -45,11 +49,18 @@ class MainActivity : Activity() {
                 stopService(Intent(this@MainActivity, CaptureService::class.java))
                 refresh()
             })
-            addView(button("Abrir acessibilidade (inserir texto)") {
+            addView(button("Abrir acessibilidade (inserir e enviar)") {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             })
+            addView(TextView(this@MainActivity).apply {
+                text = "Modo de conversa"
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, pad, 0, pad / 2)
+            })
+            addView(modePicker())
         }
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
 
         if (Build.VERSION.SDK_INT >= 33) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
@@ -59,6 +70,27 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         refresh()
+    }
+
+    /** Lista de modos: a escolha vale na próxima vez que a telinha abrir. */
+    private fun modePicker(): RadioGroup {
+        val group = RadioGroup(this)
+        val current = Prefs.mode(this)
+        Prompts.modes.entries.forEachIndexed { i, (name, mode) ->
+            group.addView(RadioButton(this).apply {
+                id = 100 + i
+                text = "$name\n${mode.desc}"
+                textSize = 15f
+                setPadding(0, 12, 0, 12)
+                isChecked = name == current
+                tag = name
+            })
+        }
+        group.setOnCheckedChangeListener { g, checkedId ->
+            val name = g.findViewById<RadioButton>(checkedId)?.tag as? String
+            if (name != null) Prefs.saveMode(this, name)
+        }
+        return group
     }
 
     private fun button(label: String, onClick: () -> Unit): Button =

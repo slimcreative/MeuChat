@@ -407,7 +407,8 @@ class CaptureService : Service() {
         val curTopic = Prefs.topic(this)
         val curTone = Prefs.tone(this)
         topics.removeAllViews()
-        Prompts.topics.keys.forEach { t ->
+        val mode = Prompts.mode(Prefs.mode(this))
+        mode.topics.keys.forEach { t ->
             topics.addView(chip(t, t == curTopic) {
                 Prefs.saveTopic(this, t)
                 renderChips()
@@ -415,7 +416,7 @@ class CaptureService : Service() {
             })
         }
         tones.removeAllViews()
-        Prompts.tones.forEach { t ->
+        mode.tones.forEach { t ->
             tones.addView(chip(t, t == curTone) {
                 Prefs.saveTone(this, t)
                 renderChips()
@@ -631,12 +632,13 @@ class CaptureService : Service() {
             setStatus("Abra o app Resposta IA e salve a chave da API.")
             return
         }
+        val mode = Prefs.mode(this)
         val topic = Prefs.topic(this)
         val tone = Prefs.tone(this)
-        setStatus("Lendo a conversa…")
+        setStatus("Lendo a conversa… · modo $mode")
         job = scope.launch {
             try {
-                val r = withContext(Dispatchers.IO) { AiClient.replies(key, shot, topic, tone) }
+                val r = withContext(Dispatchers.IO) { AiClient.replies(key, shot, mode, topic, tone) }
                 if (panel == null || resultsView !== results) return@launch
                 setStatus("")
                 if (r.reading.isNotEmpty()) {

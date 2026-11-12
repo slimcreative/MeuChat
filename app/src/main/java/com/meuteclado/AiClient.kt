@@ -35,17 +35,17 @@ object AiClient {
      *  2) se a API rejeitar o formato (400), mesmo modelo em modo texto/JSON;
      *  3) se vier vazio ou recusado, modelo reserva.
      */
-    fun replies(apiKey: String, imageB64: String, topic: String, tone: String): Suggestions {
+    fun replies(apiKey: String, imageB64: String, mode: String, topic: String, tone: String): Suggestions {
         try {
             return try {
-                call(apiKey, MODEL, imageB64, topic, tone, useTool = true)
+                call(apiKey, MODEL, imageB64, mode, topic, tone, useTool = true)
             } catch (e: HttpError) {
                 if (e.code != 400) throw e
-                call(apiKey, MODEL, imageB64, topic, tone, useTool = false)
+                call(apiKey, MODEL, imageB64, mode, topic, tone, useTool = false)
             }
         } catch (first: EmptyReply) {
             try {
-                return call(apiKey, FALLBACK_MODEL, imageB64, topic, tone, useTool = true)
+                return call(apiKey, FALLBACK_MODEL, imageB64, mode, topic, tone, useTool = true)
             } catch (second: HttpError) {
                 throw IOException(friendly(second))
             } catch (second: EmptyReply) {
@@ -65,7 +65,7 @@ object AiClient {
 
     private fun call(
         apiKey: String, model: String, imageB64: String,
-        topic: String, tone: String, useTool: Boolean
+        mode: String, topic: String, tone: String, useTool: Boolean
     ): Suggestions {
         val image = JSONObject()
             .put("type", "image")
@@ -75,12 +75,12 @@ object AiClient {
                 .put("data", imageB64))
         val text = JSONObject()
             .put("type", "text")
-            .put("text", Prompts.build(topic, tone, jsonMode = !useTool))
+            .put("text", Prompts.build(mode, topic, tone, jsonMode = !useTool))
 
         val payload = JSONObject()
             .put("model", model)
             .put("max_tokens", 1024)
-            .put("system", Prompts.SYSTEM)
+            .put("system", Prompts.system(mode))
             .put("messages", JSONArray().put(
                 JSONObject()
                     .put("role", "user")

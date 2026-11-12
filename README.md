@@ -11,6 +11,10 @@ Bolha flutuante que lê a tela sob demanda, pede respostas à IA por tema e tom,
 5. Trocar tema ou tom gera de novo. "↻" lê a tela outra vez. "👁" mostra ou esconde a miniatura da captura.
 6. Arraste a bolha até o "✕" na parte de baixo para desligar. "Desativar" no app faz o mesmo.
 
+## Modos de conversa
+
+No app, em "Modo de conversa": Casual, Profissional, Persuasão, Maquiavel e Paquera. Cada modo muda o estilo da IA e os temas e tons da telinha. O tema e o tom ficam lembrados por modo.
+
 ## Gerar o APK
 
 O workflow `build-apk` roda a cada push e publica o APK como release rascunho e no artefato `app-debug`.
