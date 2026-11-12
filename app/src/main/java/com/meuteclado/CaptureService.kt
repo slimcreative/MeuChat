@@ -24,6 +24,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import android.util.Base64
 import android.text.InputType
 import android.view.ContextThemeWrapper
@@ -58,6 +59,23 @@ class CaptureService : Service() {
         const val ACTION_STOP = "com.meuteclado.STOP"
         const val CHANNEL = "resposta_ia"
         @Volatile var running = false
+        @Volatile var instance: CaptureService? = null
+            private set
+
+        /** Mostra a bolha; liga o serviço se ainda não estiver rodando (sem compartilhar tela). */
+        fun showFor(ctx: Context) {
+            val s = instance
+            if (s != null) {
+                s.setBubbleShown(true)
+            } else if (Settings.canDrawOverlays(ctx)) {
+                runCatching { ctx.startForegroundService(Intent(ctx, CaptureService::class.java)) }
+            }
+        }
+
+        /** Esconde a bolha porque o app na frente não está na lista. */
+        fun hideForApp() {
+            instance?.setBubbleShown(false)
+        }
         private const val BUBBLE_DP = 52
         private const val MIN_W_DP = 220
         private const val ACCENT = 0xFF1E88E5.toInt()
@@ -92,6 +110,7 @@ class CaptureService : Service() {
 
     private var latest: Image? = null
     private var capturing = false
+    private var hiddenByApp = false
     private var lastShot: String? = null
     private var lastThumb: Bitmap? = null
     private var shotBlack = false
@@ -100,41 +119,69 @@ class CaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        instance = this
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            Prefs.setEnabled(this, false)
             shutdown()
             return START_NOT_STICKY
         }
         createChannel()
-        startForeground(1, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-
-        if (projection == null) {
-            val code = intent?.getIntExtra("code", 0) ?: 0
-            val data = dataExtra(intent)
-            if (code == 0 || data == null) {
-                shutdown()
-                return START_NOT_STICKY
-            }
-            val mp = getSystemService(MediaProjectionManager::class.java)
-                .getMediaProjection(code, data)
-            mp.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    main.post { shutdown() }
+        val code = intent?.getIntExtra("code", 0) ?: 0
+        val data = dataExtra(intent)
+        try {
+            if (code != 0 && data != null && projection == null) {
+                // Caminho antigo: captura por compartilhamento de tela
+                startForeground(1, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                val mp = getSystemService(MediaProjectionManager::class.java)
+                    .getMediaProjection(code, data)
+                mp.registerCallback(object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        main.post { dropProjection() }
+                    }
+                }, main)
+                projection = mp
+                setupDisplay(mp)
+            } else if (projection == null) {
+                // Caminho novo: a captura vem da acessibilidade, sem diálogo
+                if (Build.VERSION.SDK_INT >= 34) {
+                    startForeground(1, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                } else {
+                    startForeground(1, buildNotification())
                 }
-            }, main)
-            projection = mp
-            setupDisplay(mp)
-            showBubble()
-            running = true
+            }
+        } catch (e: Exception) {
+            toast("Não consegui ligar a bolha: ${e.message}")
+            shutdown()
+            return START_NOT_STICKY
         }
+        if (bubble == null) showBubble()
+        setBubbleShown(true)
+        running = true
         return START_NOT_STICKY
     }
 
+    /** O compartilhamento de tela acabou: segue pela acessibilidade se der, senão desliga. */
+    private fun dropProjection() {
+        vDisplay?.release(); vDisplay = null
+        runCatching { latest?.close() }; latest = null
+        reader?.close(); reader = null
+        projection = null
+        if (!ReplyAccessibilityService.canCapture()) shutdown()
+    }
+
+    private fun setBubbleShown(show: Boolean) {
+        hiddenByApp = !show
+        if (!show) removePanel()
+        if (!capturing) bubble?.visibility = if (show) View.VISIBLE else View.GONE
+    }
+
     override fun onDestroy() {
+        instance = null
         scope.cancel()
         shutdown()
         super.onDestroy()
@@ -187,13 +234,34 @@ class CaptureService : Service() {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
-    /** Esconde bolha e painel, pega o quadro seguinte da tela e mostra tudo de volta. */
+    /** Esconde bolha e telinha, tira o print e mostra tudo de volta. */
     private fun capture(onShot: (Bitmap) -> Unit) {
         if (capturing) return
         endEditing()
         capturing = true
         bubble?.visibility = View.INVISIBLE
         panel?.visibility = View.INVISIBLE
+        val finish = { bmp: Bitmap? ->
+            capturing = false
+            bubble?.visibility = if (hiddenByApp) View.GONE else View.VISIBLE
+            panel?.visibility = View.VISIBLE
+            if (bmp == null) toast("Não consegui ler a tela. Confira a acessibilidade em Configurações.")
+            else onShot(bmp)
+        }
+        main.postDelayed({
+            // 1º: print pela acessibilidade (sem compartilhar tela). 2º: compartilhamento, se estiver ativo.
+            val asked = ReplyAccessibilityService.screenshot { bmp ->
+                if (bmp != null) finish(bmp) else fromProjection(finish)
+            }
+            if (!asked) fromProjection(finish)
+        }, 220)
+    }
+
+    private fun fromProjection(finish: (Bitmap?) -> Unit) {
+        if (projection == null) {
+            finish(null)
+            return
+        }
         var tries = 0
         lateinit var attempt: Runnable
         attempt = Runnable {
@@ -202,12 +270,9 @@ class CaptureService : Service() {
                 main.postDelayed(attempt, 150)
                 return@Runnable
             }
-            capturing = false
-            bubble?.visibility = View.VISIBLE
-            panel?.visibility = View.VISIBLE
-            if (bmp == null) toast("Não consegui capturar a tela") else onShot(bmp)
+            finish(bmp)
         }
-        main.postDelayed(attempt, 220)
+        attempt.run()
     }
 
     // ---------- bolha flutuante ----------
@@ -280,6 +345,8 @@ class CaptureService : Service() {
                         val close = overDismiss(tv)
                         hideDismissTarget()
                         if (close) {
+                            Prefs.setEnabled(this, false)
+                            toast("Bolha desligada. Abra o app para ligar de novo.")
                             main.post { shutdown() }
                         } else {
                             // encosta na borda mais próxima
@@ -928,7 +995,7 @@ class CaptureService : Service() {
         )
         return Notification.Builder(this, CHANNEL)
             .setContentTitle("Resposta IA ativa")
-            .setContentText("Toque em Desativar para parar")
+            .setContentText("A bolha aparece nos apps escolhidos")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .addAction(
                 Notification.Action.Builder(

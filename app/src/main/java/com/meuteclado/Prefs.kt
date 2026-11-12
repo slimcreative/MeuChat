@@ -57,6 +57,14 @@ object Prefs {
     fun savePanelSize(c: Context, w: Int, h: Int) =
         sp(c).edit().putInt("panel_w", w).putInt("list_h", h).apply()
 
+    /** Apps onde a bolha aparece sozinha. Vazio = aparece em qualquer app. */
+    fun apps(c: Context): Set<String> = sp(c).getStringSet("apps", emptySet())?.toSet() ?: emptySet()
+    fun saveApps(c: Context, v: Set<String>) = sp(c).edit().putStringSet("apps", HashSet(v)).apply()
+
+    /** Bolha ligada pelo usuário (desligar pelo app ou pelo ✕ põe em false). */
+    fun enabled(c: Context): Boolean = sp(c).getBoolean("enabled", false)
+    fun setEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("enabled", v).apply()
+
     fun showThumb(c: Context): Boolean = sp(c).getBoolean(KEY_THUMB, false)
     fun saveShowThumb(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_THUMB, v).apply()
 }

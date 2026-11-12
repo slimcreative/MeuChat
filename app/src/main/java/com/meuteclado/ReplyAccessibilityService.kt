@@ -2,10 +2,14 @@ package com.meuteclado
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Bitmap
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
+import android.view.inputmethod.InputMethodManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 
@@ -19,6 +23,39 @@ class ReplyAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: ReplyAccessibilityService? = null
             private set
+
+        /** Dá para ler a tela sem pedir compartilhamento? (Android 11+ com o serviço ativo) */
+        fun canCapture(): Boolean = Build.VERSION.SDK_INT >= 30 && instance != null
+
+        /**
+         * Tira um print pela acessibilidade, sem diálogo de compartilhar tela.
+         * Devolve false se não deu para pedir; onDone(null) se o sistema recusou.
+         */
+        fun screenshot(onDone: (Bitmap?) -> Unit): Boolean {
+            if (Build.VERSION.SDK_INT < 30) return false
+            val svc = instance ?: return false
+            return try {
+                svc.takeScreenshot(Display.DEFAULT_DISPLAY, svc.mainExecutor,
+                    object : TakeScreenshotCallback {
+                        override fun onSuccess(result: ScreenshotResult) {
+                            val hb = result.hardwareBuffer
+                            val bmp = runCatching {
+                                Bitmap.wrapHardwareBuffer(hb, result.colorSpace)
+                                    ?.copy(Bitmap.Config.ARGB_8888, false)
+                            }.getOrNull()
+                            hb.close()
+                            onDone(bmp)
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            onDone(null)
+                        }
+                    })
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
 
         /** Só coloca o texto no campo. */
         fun insert(text: String): Boolean = instance?.setText(text) ?: false
@@ -41,7 +78,23 @@ class ReplyAccessibilityService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    private val imePackages: Set<String> by lazy {
+        runCatching {
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
+                .enabledInputMethodList.map { it.packageName }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    /** Mostra a bolha quando um app escolhido vem para a frente e esconde nos outros. */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg == packageName || pkg == "com.android.systemui" || pkg in imePackages) return
+        if (!Prefs.enabled(this)) return
+        val allowed = Prefs.apps(this)
+        if (allowed.isEmpty()) return
+        if (pkg in allowed) CaptureService.showFor(this) else CaptureService.hideForApp()
+    }
 
     override fun onInterrupt() {}
 

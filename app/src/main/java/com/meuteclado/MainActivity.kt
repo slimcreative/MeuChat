@@ -40,7 +40,10 @@ class MainActivity : Activity() {
     private lateinit var permStatus: TextView
     private lateinit var keyField: EditText
     private lateinit var styleField: EditText
-    private var inSettings = false
+    private lateinit var a11yCard: View
+    private lateinit var appsCard: TextView
+    private var appsView: View? = null
+    private var screen = 0  // 0 = principal, 1 = configurações, 2 = apps
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,7 +68,11 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (inSettings) showHome() else super.onBackPressed()
+        when (screen) {
+            2 -> showSettings()
+            1 -> showHome()
+            else -> super.onBackPressed()
+        }
     }
 
     // ---------- peças de interface ----------
@@ -121,9 +128,10 @@ class MainActivity : Activity() {
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 
-    private fun page(content: LinearLayout) = ScrollView(this).apply {
+    private fun page(content: LinearLayout, fill: Boolean = false) = ScrollView(this).apply {
         setBackgroundColor(BG)
         isVerticalScrollBarEnabled = false
+        isFillViewport = fill
         content.orientation = LinearLayout.VERTICAL
         content.setPadding(dp(18), dp(18), dp(18), dp(28))
         addView(content)
@@ -153,17 +161,37 @@ class MainActivity : Activity() {
             addView(titles)
             addView(gear)
         }
-        modeList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Os cartões dividem a altura que sobra, para a tela ficar cheia
+        modeList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        a11yCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = round(0xFF2A1D0E.toInt(), 18, ACCENT)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(16), 0, 0) }
+            addView(label("Ative a acessibilidade", 16f, Color.WHITE, true))
+            addView(label(
+                "Com ela a bolha lê a tela sem pedir compartilhamento, aparece sozinha nos apps escolhidos e envia a resposta. Toque aqui.",
+                13f, 0xFFE0C9A8.toInt()
+            ))
+            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        }
         stopBtn = pill("Desligar bolha", 0xFF3A2026.toInt()) {
+            Prefs.setEnabled(this, false)
             stopService(Intent(this, CaptureService::class.java))
             status.postDelayed({ refresh() }, 300)
         }
         return page(LinearLayout(this).apply {
             addView(header)
-            addView(section("TOQUE NA BOLHA DO MODO PARA ABRIR"))
+            addView(a11yCard)
+            addView(section("TOQUE NO MODO PARA LIGAR A BOLHA"))
             addView(modeList)
             addView(stopBtn)
-        })
+        }, fill = true)
     }
 
     private fun renderModes() {
@@ -174,8 +202,8 @@ class MainActivity : Activity() {
             val texts = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                addView(label(name, 17f, Color.WHITE, true))
-                addView(label(mode.desc, 13f, MUTED))
+                addView(label(name, 20f, Color.WHITE, true))
+                addView(label(mode.desc, 14f, MUTED))
                 if (selected) addView(label(
                     if (CaptureService.running) "● ativo agora" else "● selecionado", 12f, ACCENT
                 ).apply { setPadding(0, dp(4), 0, 0) })
@@ -183,13 +211,14 @@ class MainActivity : Activity() {
             modeList.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(16), dp(14), dp(14), dp(14))
-                background = round(CARD, 18, if (selected) ACCENT else 0)
+                setPadding(dp(20), dp(14), dp(16), dp(14))
+                minimumHeight = dp(92)
+                background = round(CARD, 20, if (selected) ACCENT else 0)
                 layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
                 ).apply { setMargins(0, 0, 0, dp(10)) }
                 addView(texts)
-                addView(fox(48))
+                addView(fox(60))
                 setOnClickListener { openMode(name) }
             })
         }
@@ -204,6 +233,7 @@ class MainActivity : Activity() {
             showSettings()
             return
         }
+        Prefs.setEnabled(this, true)
         if (CaptureService.running) {
             toast("Modo $name ativo")
             moveTaskToBack(true)
@@ -227,6 +257,7 @@ class MainActivity : Activity() {
             gravity = Gravity.TOP
         }
         permStatus = label("", 14f, Color.WHITE)
+        appsCard = pill("", FIELD) { showApps() }
         val back = label("←  Configurações", 20f, Color.WHITE, true).apply {
             setPadding(0, dp(6), 0, dp(6))
             setOnClickListener { showHome() }
@@ -253,6 +284,9 @@ class MainActivity : Activity() {
                 )
             })
 
+            addView(section("APPS COM A BOLHA"))
+            addView(appsCard)
+
             addView(section("MEU JEITO DE RESPONDER"))
             addView(label(
                 "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
@@ -268,15 +302,92 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-        inSettings = false
+        screen = 0
         setContentView(home)
         refresh()
     }
 
     private fun showSettings() {
-        inSettings = true
+        screen = 1
         setContentView(settings)
         refresh()
+    }
+
+    // ---------- escolha dos apps ----------
+
+    private val favorites = listOf(
+        "whatsapp", "instagram", "telegram", "messenger", "facebook.orca", "tinder", "bumble",
+        "badoo", "happn", "discord", "twitter", "linkedin", "tiktok", "snapchat", "messaging", "signal"
+    )
+
+    private fun showApps() {
+        screen = 2
+        val v = appsView ?: buildApps().also { appsView = it }
+        setContentView(v)
+    }
+
+    private fun buildApps(): View {
+        val pm = packageManager
+        val launch = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val chosen = Prefs.apps(this).toMutableSet()
+        val apps = pm.queryIntentActivities(launch, 0)
+            .map { it.activityInfo }
+            .filter { it.packageName != packageName }
+            .distinctBy { it.packageName }
+            .map { Triple(it.packageName, it.loadLabel(pm).toString(), it) }
+            .sortedWith(
+                compareByDescending<Triple<String, String, android.content.pm.ActivityInfo>> { it.first in chosen }
+                    .thenByDescending { t -> favorites.any { t.first.contains(it) } }
+                    .thenBy { it.second.lowercase() }
+            )
+
+        val list = LinearLayout(this)
+        list.addView(label("←  Apps com a bolha", 20f, Color.WHITE, true).apply {
+            setPadding(0, dp(6), 0, dp(6))
+            setOnClickListener { showSettings() }
+        })
+        list.addView(label(
+            "Marque os apps onde a bolha deve aparecer sozinha. Sem nenhum marcado, ela aparece em qualquer app. " +
+                "Precisa da acessibilidade ativa.",
+            13f, MUTED
+        ).apply { setPadding(dp(4), dp(6), 0, dp(14)) })
+
+        apps.forEach { (pkg, name, info) ->
+            val mark = label("", 16f, Color.WHITE, true).apply {
+                gravity = Gravity.CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
+            }
+            fun paint() {
+                val on = pkg in chosen
+                mark.text = if (on) "✓" else ""
+                mark.background = round(if (on) ACCENT else FIELD, 15)
+            }
+            paint()
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                background = round(CARD, 14)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, dp(8)) }
+                addView(ImageView(this@MainActivity).apply {
+                    runCatching { setImageDrawable(info.loadIcon(pm)) }
+                    layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+                })
+                addView(label(name, 16f, Color.WHITE).apply {
+                    setPadding(dp(12), 0, dp(8), 0)
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(mark)
+                setOnClickListener {
+                    if (pkg in chosen) chosen.remove(pkg) else chosen.add(pkg)
+                    Prefs.saveApps(this@MainActivity, chosen)
+                    paint()
+                }
+            })
+        }
+        return page(list)
     }
 
     // ---------- ligar a bolha ----------
@@ -289,6 +400,15 @@ class MainActivity : Activity() {
             )
             return
         }
+        if (ReplyAccessibilityService.canCapture()) {
+            // Com a acessibilidade ativa não precisa compartilhar a tela
+            CaptureService.showFor(this)
+            toast("Bolha ligada no modo ${Prefs.mode(this)}")
+            status.postDelayed({ refresh() }, 400)
+            moveTaskToBack(true)
+            return
+        }
+        toast("Sem acessibilidade: vou pedir o compartilhamento de tela")
         val mpm = getSystemService(MediaProjectionManager::class.java)
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_PROJECTION)
     }
@@ -314,6 +434,10 @@ class MainActivity : Activity() {
         status.text = if (running) "Bolha ligada · modo ${Prefs.mode(this)}" else "Bolha desligada"
         stopBtn.visibility = if (running) View.VISIBLE else View.GONE
         renderModes()
+
+        a11yCard.visibility = if (ReplyAccessibilityService.instance != null) View.GONE else View.VISIBLE
+        val n = Prefs.apps(this).size
+        appsCard.text = if (n == 0) "Escolher apps (agora: todos)" else "Escolher apps ($n marcados)"
 
         val key = if (Prefs.apiKey(this).isNotBlank()) "salva ✓" else "não definida"
         val ov = if (Settings.canDrawOverlays(this)) "ok ✓" else "pendente"

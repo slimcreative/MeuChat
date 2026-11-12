@@ -21,6 +21,10 @@ No app, em "Modo de conversa": Casual, Profissional, Persuasão, Maquiavel e Paq
 - Enquanto digita, "Salvar como meu jeito de responder" guarda o texto como regra fixa de estilo.
 - No app, "Meu jeito de responder" mostra e edita essas regras. A IA também imita o jeito das suas mensagens que aparecem na tela.
 
+## Sem compartilhar tela
+
+Com a acessibilidade ativa (Android 11+), a bolha lê a tela pelo próprio serviço de acessibilidade: não aparece o pedido de compartilhamento nem o ícone de transmissão. Em Configurações → "Escolher apps" você marca os apps onde a bolha aparece sozinha; nos outros ela some.
+
 ## Tamanho da telinha
 
 Arraste a alça (◢) no canto de baixo da telinha para mudar largura e altura. As letras acompanham e o tamanho fica salvo.

@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="a11y_desc">Coloca a resposta sugerida no campo de mensagem e toca em enviar quando você pede.</string>
+    <string name="a11y_desc">Lê a tela quando você toca na bolha (sem pedir compartilhamento de tela), mostra a bolha nos apps que você escolheu, coloca a resposta no campo de mensagem e toca em enviar quando você pede.</string>
 </resources>
