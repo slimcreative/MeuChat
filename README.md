@@ -15,6 +15,12 @@ Bolha flutuante que lê a tela sob demanda, pede respostas à IA por tema e tom,
 
 No app, em "Modo de conversa": Casual, Profissional, Persuasão, Maquiavel e Paquera. Cada modo muda o estilo da IA e os temas e tons da telinha. O tema e o tom ficam lembrados por modo.
 
+## Perguntar e ensinar
+
+- Na telinha, o campo "Pergunte ou peça algo à IA" serve para pedir opinião ("o que ela quis dizer?") ou dizer o que você quer falar ("quero chamar pra sair sábado"). O "➤" envia.
+- Enquanto digita, "Salvar como meu jeito de responder" guarda o texto como regra fixa de estilo.
+- No app, "Meu jeito de responder" mostra e edita essas regras. A IA também imita o jeito das suas mensagens que aparecem na tela.
+
 ## Gerar o APK
 
 O workflow `build-apk` roda a cada push e publica o APK como release rascunho e no artefato `app-debug`.

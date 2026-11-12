@@ -70,6 +70,7 @@ object Prompts {
                 "Resposta" to "Responda à última mensagem recebida de forma que mantenha a conversa viva e dê vontade de continuar.",
                 "Abertura" to "Escreva a PRIMEIRA mensagem para começar a conversa com esta pessoa, com base no contexto visível (perfil, foto, história, interesses). Curta, natural, sem clichê.",
                 "Entrelinhas" to "Leia o que a pessoa pode estar sentindo ou querendo dizer e sugira respostas que respondam ao sentimento, não só ao texto literal.",
+                "Persuasão" to "Conduza a conversa para o que o usuário quer (ela topar o convite, continuar a conversa, dar uma chance): mostre o que ela ganha com isso, use algo que ela mesma disse, antecipe a dúvida dela e termine com um passo fácil de aceitar. Persuasão honesta, sem insistir se ela já disse não.",
                 "Flerte" to "Crie interesse leve: um elogio específico, uma provocação brincalhona ou uma pergunta que convide a pessoa a falar de si.",
                 "Encontro" to "Proponha ou responda sobre marcar um encontro de forma clara, confiante e fácil de aceitar, com uma opção concreta de dia ou lugar."
             ),
@@ -82,25 +83,40 @@ object Prompts {
     private const val BASE =
         "Você ajuda o usuário a escrever mensagens em conversas de chat. Você recebe um print da conversa. " +
         "As mensagens do usuário ficam à direita; as da outra pessoa, à esquerda. " +
-        "Escreva como o usuário escreveria, em português do Brasil, do jeito que uma pessoa real digita no celular. " +
+        "As sugestões precisam parecer escritas pelo próprio usuário: observe as mensagens dele no print e imite o jeito dele " +
+        "(tamanho das mensagens, gírias, abreviações, pontuação, maiúsculas e minúsculas, emojis, risadas), " +
+        "a não ser que o contexto do modo peça outro registro. Português do Brasil, como uma pessoa real digita no celular. " +
         "Nada de mentira, ameaça, pressão ou insistência. " +
         "Se a pessoa demonstrar desinteresse ou disser não, a melhor resposta respeita isso."
 
-    fun system(modeName: String): String = BASE + " " + mode(modeName).style
+    fun system(modeName: String, style: String): String {
+        val sb = StringBuilder(BASE).append(' ').append(mode(modeName).style)
+        if (style.isNotBlank()) {
+            sb.append(" Instruções do próprio usuário sobre o jeito dele de escrever. Siga à risca em todas as sugestões, elas valem mais que qualquer outra regra de estilo:\n")
+            sb.append(style.trim())
+        }
+        return sb.toString()
+    }
 
-    fun build(modeName: String, topic: String, tone: String, jsonMode: Boolean): String {
+    fun build(modeName: String, topic: String, tone: String, ask: String, jsonMode: Boolean): String {
         val m = mode(modeName)
         val task = m.topics[topic] ?: m.topics.values.first()
         val out = if (jsonMode)
-            "Responda APENAS com JSON, sem texto antes ou depois: {\"leitura\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}"
+            "Responda APENAS com JSON, sem texto antes ou depois: {\"leitura\": \"...\", \"resposta\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}"
         else
             "Entregue pela ferramenta: 'leitura' com uma frase curta sobre o que a pessoa quis dizer e 'options' com 3 mensagens diferentes entre si."
-        return """
-            Este é o print da conversa.
-            1) Leia as últimas mensagens e entenda o que a outra pessoa quer ou sente.
-            2) Tarefa: $task
-            3) Tom: $tone.
-            $out
-        """.trimIndent()
+        val extra = if (ask.isBlank()) "" else
+            "O usuário escreveu para você: «" + ask.trim() + "». " +
+            "Se for uma pergunta ou um pedido de opinião, responda em 'resposta', direto e prático, em até 4 frases, " +
+            "e coloque em 'options' mensagens que ele pode enviar, se fizer sentido (pode ficar vazio). " +
+            "Se for uma instrução sobre o que ele quer dizer, siga essa instrução ao escrever as 'options' e deixe 'resposta' vazio."
+        return listOf(
+            "Este é o print da conversa.",
+            "1) Leia as últimas mensagens e entenda o que a outra pessoa quer ou sente.",
+            "2) Tarefa: $task",
+            "3) Tom: $tone.",
+            extra,
+            out
+        ).filter { it.isNotEmpty() }.joinToString("\n")
     }
 }

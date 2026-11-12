@@ -12,7 +12,10 @@ import java.util.concurrent.TimeUnit
 object AiClient {
 
     /** Sugestões prontas + leitura opcional do que a pessoa quis dizer. */
-    class Suggestions(val options: List<String>, val reading: String)
+    class Suggestions(val options: List<String>, val reading: String, val answer: String)
+
+    /** Tudo que define um pedido: modo, tema, tom, estilo do usuário e o que ele digitou. */
+    class Query(val mode: String, val topic: String, val tone: String, val style: String, val ask: String)
 
     /** A API respondeu 200, mas sem conteúdo aproveitável (recusa, corte, vazio). */
     private class EmptyReply(val reason: String) : IOException(reason)
@@ -35,17 +38,17 @@ object AiClient {
      *  2) se a API rejeitar o formato (400), mesmo modelo em modo texto/JSON;
      *  3) se vier vazio ou recusado, modelo reserva.
      */
-    fun replies(apiKey: String, imageB64: String, mode: String, topic: String, tone: String): Suggestions {
+    fun replies(apiKey: String, imageB64: String, q: Query): Suggestions {
         try {
             return try {
-                call(apiKey, MODEL, imageB64, mode, topic, tone, useTool = true)
+                call(apiKey, MODEL, imageB64, q, useTool = true)
             } catch (e: HttpError) {
                 if (e.code != 400) throw e
-                call(apiKey, MODEL, imageB64, mode, topic, tone, useTool = false)
+                call(apiKey, MODEL, imageB64, q, useTool = false)
             }
         } catch (first: EmptyReply) {
             try {
-                return call(apiKey, FALLBACK_MODEL, imageB64, mode, topic, tone, useTool = true)
+                return call(apiKey, FALLBACK_MODEL, imageB64, q, useTool = true)
             } catch (second: HttpError) {
                 throw IOException(friendly(second))
             } catch (second: EmptyReply) {
@@ -65,7 +68,7 @@ object AiClient {
 
     private fun call(
         apiKey: String, model: String, imageB64: String,
-        mode: String, topic: String, tone: String, useTool: Boolean
+        q: Query, useTool: Boolean
     ): Suggestions {
         val image = JSONObject()
             .put("type", "image")
@@ -75,12 +78,12 @@ object AiClient {
                 .put("data", imageB64))
         val text = JSONObject()
             .put("type", "text")
-            .put("text", Prompts.build(mode, topic, tone, jsonMode = !useTool))
+            .put("text", Prompts.build(q.mode, q.topic, q.tone, q.ask, jsonMode = !useTool))
 
         val payload = JSONObject()
             .put("model", model)
             .put("max_tokens", 1024)
-            .put("system", Prompts.system(mode))
+            .put("system", Prompts.system(q.mode, q.style))
             .put("messages", JSONArray().put(
                 JSONObject()
                     .put("role", "user")
@@ -140,14 +143,18 @@ object AiClient {
     }
 
     private fun parse(obj: JSONObject?): Suggestions? {
-        val arr = obj?.optJSONArray("options") ?: return null
+        if (obj == null) return null
         val list = ArrayList<String>()
-        for (i in 0 until arr.length()) {
-            val s = arr.optString(i).trim()
-            if (s.isNotEmpty()) list.add(s)
+        val arr = obj.optJSONArray("options")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val s = arr.optString(i).trim()
+                if (s.isNotEmpty()) list.add(s)
+            }
         }
-        if (list.isEmpty()) return null
-        return Suggestions(list, obj.optString("leitura").trim())
+        val answer = obj.optString("resposta").trim()
+        if (list.isEmpty() && answer.isEmpty()) return null
+        return Suggestions(list, obj.optString("leitura").trim(), answer)
     }
 
     private fun errorMessage(body: String): String = try {
@@ -165,9 +172,12 @@ object AiClient {
                 .put("leitura", JSONObject()
                     .put("type", "string")
                     .put("description", "Uma frase curta: o que a outra pessoa quis dizer ou está sentindo."))
+                .put("resposta", JSONObject()
+                    .put("type", "string")
+                    .put("description", "Só quando o usuário fez uma pergunta ou pediu opinião: a resposta para ele, direta, em até 4 frases. Caso contrário, vazio."))
                 .put("options", JSONObject()
                     .put("type", "array")
-                    .put("description", "3 mensagens diferentes, prontas para enviar.")
+                    .put("description", "Mensagens diferentes entre si, prontas para enviar. Normalmente 3.")
                     .put("items", JSONObject().put("type", "string"))))
             .put("required", JSONArray().put("options")))
 }

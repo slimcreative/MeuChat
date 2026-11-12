@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.InputType
+import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -17,12 +18,14 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
 class MainActivity : Activity() {
 
     private val REQ_OVERLAY = 1
     private val REQ_PROJECTION = 2
     private lateinit var status: TextView
+    private lateinit var styleField: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,6 +36,15 @@ class MainActivity : Activity() {
             hint = "Chave da API (sk-ant-...)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(Prefs.apiKey(this@MainActivity))
+        }
+
+        styleField = EditText(this).apply {
+            hint = "Como você escreve?"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            minLines = 3
+            maxLines = 10
+            gravity = Gravity.TOP
         }
 
         val root = LinearLayout(this).apply {
@@ -59,6 +71,22 @@ class MainActivity : Activity() {
                 setPadding(0, pad, 0, pad / 2)
             })
             addView(modePicker())
+            addView(TextView(this@MainActivity).apply {
+                text = "Meu jeito de responder"
+                textSize = 18f
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, pad, 0, pad / 2)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Ensine a IA a escrever como você. Uma instrução por linha, e pode colar mensagens suas como exemplo. " +
+                    "Ex.: escrevo tudo em minúsculo, sem ponto final · uso kkkk e mano · mensagens bem curtas · nunca uso emoji."
+                textSize = 13f
+            })
+            addView(styleField)
+            addView(button("Salvar meu jeito") {
+                Prefs.saveStyle(this@MainActivity, styleField.text.toString())
+                Toast.makeText(this@MainActivity, "Salvo", Toast.LENGTH_SHORT).show()
+            })
         }
         setContentView(ScrollView(this).apply { addView(root) })
 
@@ -69,6 +97,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (!styleField.hasFocus()) styleField.setText(Prefs.style(this))
         refresh()
     }
 

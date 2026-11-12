@@ -6,6 +6,7 @@ import android.content.Context
 object Prefs {
     private const val FILE = "cfg"
     private const val KEY_API = "api_key"
+    private const val KEY_STYLE = "style"
     private const val KEY_MODE = "mode"
     private const val KEY_TOPIC = "topic"
     private const val KEY_TONE = "tone"
@@ -41,6 +42,14 @@ object Prefs {
         return if (t != null && t in tones) t else tones.first()
     }
     fun saveTone(c: Context, v: String) = sp(c).edit().putString("${KEY_TONE}_${mode(c)}", v).apply()
+
+    /** Instruções do usuário sobre o jeito dele de escrever. */
+    fun style(c: Context): String = sp(c).getString(KEY_STYLE, "") ?: ""
+    fun saveStyle(c: Context, v: String) = sp(c).edit().putString(KEY_STYLE, v.trim().take(2000)).apply()
+    fun addStyle(c: Context, line: String) {
+        val cur = style(c)
+        saveStyle(c, if (cur.isEmpty()) line.trim() else cur + "\n" + line.trim())
+    }
 
     fun showThumb(c: Context): Boolean = sp(c).getBoolean(KEY_THUMB, false)
     fun saveShowThumb(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_THUMB, v).apply()

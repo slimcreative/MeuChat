@@ -25,10 +25,15 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Base64
+import android.text.InputType
+import android.view.ContextThemeWrapper
 import android.view.Gravity
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -77,6 +82,10 @@ class CaptureService : Service() {
     private var noteView: TextView? = null
     private var statusView: TextView? = null
     private var resultsView: LinearLayout? = null
+    private var answerView: TextView? = null
+    private var askView: EditText? = null
+    private var teachRow: View? = null
+    private var editing = false
 
     private var latest: Image? = null
     private var capturing = false
@@ -178,6 +187,7 @@ class CaptureService : Service() {
     /** Esconde bolha e painel, pega o quadro seguinte da tela e mostra tudo de volta. */
     private fun capture(onShot: (Bitmap) -> Unit) {
         if (capturing) return
+        endEditing()
         capturing = true
         bubble?.visibility = View.INVISIBLE
         panel?.visibility = View.INVISIBLE
@@ -478,6 +488,63 @@ class CaptureService : Service() {
         }
         noteView = note
 
+        val answer = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = round(0xFF303847.toInt(), 12)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(8), 0, 0) }
+            visibility = View.GONE
+        }
+        answerView = answer
+
+        // Campo para perguntar ou pedir algo à IA
+        val ask = EditText(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault)).apply {
+            hint = "Pergunte ou peça algo à IA…"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setHintTextColor(0xFF8D96A3.toInt())
+            background = round(CHIP, 14)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            maxLines = 3
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            isLongClickable = false
+            setTextIsSelectable(false)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            setOnTouchListener { _, e ->
+                if (e.action == MotionEvent.ACTION_UP && !editing) beginEditing()
+                false
+            }
+            setOnEditorActionListener { _, id, _ ->
+                if (id == EditorInfo.IME_ACTION_SEND) {
+                    submitAsk()
+                    true
+                } else false
+            }
+        }
+        askView = ask
+        val askRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(8), 0, 0) }
+            addView(ask)
+            addView(iconButton("➤") { submitAsk() })
+        }
+        // Só aparece enquanto digita: guarda o texto como regra do jeito de escrever
+        val teach = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dp(6), 0, 0)
+            visibility = View.GONE
+            addView(actionPill("Salvar como meu jeito de responder", false) { teachStyle() })
+        }
+        teachRow = teach
+
         val status = TextView(this).apply {
             textSize = 12f
             setTextColor(0xFF8D96A3.toInt())
@@ -502,10 +569,18 @@ class CaptureService : Service() {
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { setMargins(0, dp(6), 0, 0) }
             })
+            addView(askRow)
+            addView(teach)
             addView(thumb)
             addView(note)
+            addView(answer)
             addView(status)
             addView(scroll)
+            // Toque fora da telinha enquanto digita: fecha o teclado e devolve o foco ao app
+            setOnTouchListener { _, e ->
+                if (e.action == MotionEvent.ACTION_OUTSIDE) endEditing()
+                false
+            }
         }
 
         val lp = overlayParams(pw, WindowManager.LayoutParams.WRAP_CONTENT).apply {
@@ -538,11 +613,66 @@ class CaptureService : Service() {
         val leftSide = bl.x + size / 2 < m.widthPixels / 2
         val x = (if (leftSide) bl.x + size + gap else bl.x - lp.width - gap)
             .coerceIn(dp(4), maxOf(dp(4), m.widthPixels - lp.width - dp(4)))
-        val y = bl.y.coerceIn(0, maxOf(0, m.heightPixels - panelHeight - dp(72)))
+        val anchorY = if (editing) minOf(bl.y, dp(70)) else bl.y
+        val y = anchorY.coerceIn(0, maxOf(0, m.heightPixels - panelHeight - dp(72)))
         if (x == lp.x && y == lp.y) return false
         lp.x = x
         lp.y = y
         return true
+    }
+
+    // ---------- digitar na telinha ----------
+
+    private fun imm() = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+
+    /** Deixa a telinha receber teclado; toques fora dela continuam indo para o app. */
+    private fun beginEditing() {
+        val p = panel ?: return
+        val lp = panelLp ?: return
+        val e = askView ?: return
+        if (editing) return
+        editing = true
+        lp.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+        placePanel(lp, p.height)
+        runCatching { wm.updateViewLayout(p, lp) }
+        teachRow?.visibility = View.VISIBLE
+        e.requestFocus()
+        main.postDelayed({ if (editing) imm().showSoftInput(e, 0) }, 150)
+    }
+
+    private fun endEditing() {
+        if (!editing) return
+        editing = false
+        val p = panel ?: return
+        val lp = panelLp ?: return
+        askView?.let {
+            imm().hideSoftInputFromWindow(it.windowToken, 0)
+            it.clearFocus()
+        }
+        teachRow?.visibility = View.GONE
+        lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        placePanel(lp, p.height)
+        runCatching { wm.updateViewLayout(p, lp) }
+    }
+
+    private fun submitAsk() {
+        endEditing()
+        generate()
+    }
+
+    private fun teachStyle() {
+        val e = askView ?: return
+        val line = e.text.toString().trim()
+        if (line.isEmpty()) {
+            toast("Escreva como você quer que eu responda")
+            return
+        }
+        Prefs.addStyle(this, line)
+        e.setText("")
+        endEditing()
+        toast("Salvo no seu jeito de responder")
+        generate()
     }
 
     private fun positionPanel() {
@@ -614,9 +744,11 @@ class CaptureService : Service() {
     private fun generate() {
         val results = resultsView ?: return
         val note = noteView ?: return
+        val answer = answerView ?: return
         job?.cancel()
         results.removeAllViews()
         note.visibility = View.GONE
+        answer.visibility = View.GONE
 
         val shot = lastShot
         if (shot == null) {
@@ -635,15 +767,20 @@ class CaptureService : Service() {
         val mode = Prefs.mode(this)
         val topic = Prefs.topic(this)
         val tone = Prefs.tone(this)
+        val q = AiClient.Query(mode, topic, tone, Prefs.style(this), askView?.text?.toString().orEmpty().trim())
         setStatus("Lendo a conversa… · modo $mode")
         job = scope.launch {
             try {
-                val r = withContext(Dispatchers.IO) { AiClient.replies(key, shot, mode, topic, tone) }
+                val r = withContext(Dispatchers.IO) { AiClient.replies(key, shot, q) }
                 if (panel == null || resultsView !== results) return@launch
                 setStatus("")
                 if (r.reading.isNotEmpty()) {
                     note.text = r.reading
                     note.visibility = View.VISIBLE
+                }
+                if (r.answer.isNotEmpty()) {
+                    answer.text = r.answer
+                    answer.visibility = View.VISIBLE
                 }
                 r.options.forEach { results.addView(replyCard(it)) }
             } catch (e: CancellationException) {
@@ -677,6 +814,11 @@ class CaptureService : Service() {
     }
 
     private fun removePanel() {
+        if (editing) askView?.let { imm().hideSoftInputFromWindow(it.windowToken, 0) }
+        editing = false
+        answerView = null
+        askView = null
+        teachRow = null
         job?.cancel()
         job = null
         panel?.let { runCatching { wm.removeView(it) } }
