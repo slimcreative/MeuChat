@@ -51,6 +51,12 @@ object Prefs {
         saveStyle(c, if (cur.isEmpty()) line.trim() else cur + "\n" + line.trim())
     }
 
+    /** Tamanho da telinha, em dp. */
+    fun panelW(c: Context): Int = sp(c).getInt("panel_w", 264)
+    fun listH(c: Context): Int = sp(c).getInt("list_h", 250)
+    fun savePanelSize(c: Context, w: Int, h: Int) =
+        sp(c).edit().putInt("panel_w", w).putInt("list_h", h).apply()
+
     fun showThumb(c: Context): Boolean = sp(c).getBoolean(KEY_THUMB, false)
     fun saveShowThumb(c: Context, v: Boolean) = sp(c).edit().putBoolean(KEY_THUMB, v).apply()
 }

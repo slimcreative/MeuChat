@@ -21,6 +21,13 @@ No app, em "Modo de conversa": Casual, Profissional, Persuasão, Maquiavel e Paq
 - Enquanto digita, "Salvar como meu jeito de responder" guarda o texto como regra fixa de estilo.
 - No app, "Meu jeito de responder" mostra e edita essas regras. A IA também imita o jeito das suas mensagens que aparecem na tela.
 
+## Tamanho da telinha
+
+Arraste a alça (◢) no canto de baixo da telinha para mudar largura e altura. As letras acompanham e o tamanho fica salvo.
+
 ## Gerar o APK
+
+O APK é assinado sempre com a mesma chave (`resposta-ia.jks`), então cada versão nova instala por cima da anterior e mantém a chave da API e as configurações.
+
 
 O workflow `build-apk` roda a cada push e publica o APK como release rascunho e no artefato `app-debug`.

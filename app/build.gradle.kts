@@ -11,8 +11,18 @@ android {
         applicationId = "com.meuteclado"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5"
+        versionCode = 6
+        versionName = "0.6"
+    }
+
+    // Chave fixa: assim cada APK novo instala por cima do anterior, sem desinstalar.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("resposta-ia.jks")
+            storePassword = "respostaia"
+            keyAlias = "respostaia"
+            keyPassword = "respostaia"
+        }
     }
 
     compileOptions {

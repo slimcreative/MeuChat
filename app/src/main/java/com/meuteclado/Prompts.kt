@@ -116,7 +116,8 @@ object Prompts {
             "2) Tarefa: $task",
             "3) Tom: $tone.",
             extra,
-            out
+            out,
+            "Se o print não mostrar uma conversa de chat, não invente: deixe 'options' vazio, 'leitura' vazio e diga isso em 'resposta' em uma frase curta."
         ).filter { it.isNotEmpty() }.joinToString("\n")
     }
 }

@@ -58,7 +58,8 @@ class CaptureService : Service() {
         const val ACTION_STOP = "com.meuteclado.STOP"
         const val CHANNEL = "resposta_ia"
         @Volatile var running = false
-        private const val BUBBLE_DP = 48
+        private const val BUBBLE_DP = 52
+        private const val MIN_W_DP = 220
         private const val ACCENT = 0xFF1E88E5.toInt()
         private const val CHIP = 0xFF2A303C.toInt()
     }
@@ -86,6 +87,8 @@ class CaptureService : Service() {
     private var askView: EditText? = null
     private var teachRow: View? = null
     private var editing = false
+    private var fs = 1f
+    private var lastResult: AiClient.Suggestions? = null
 
     private var latest: Image? = null
     private var capturing = false
@@ -227,16 +230,14 @@ class CaptureService : Service() {
 
     private fun showBubble() {
         val size = dp(BUBBLE_DP)
-        val tv = TextView(this).apply {
-            text = "IA"
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+        val tv = ImageView(this).apply {
+            setImageResource(R.drawable.fox_bubble)
+            scaleType = ImageView.ScaleType.CENTER_CROP
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(ACCENT)
-                setStroke(dp(2), 0x55FFFFFF)
+                setColor(0xFF1A1438.toInt())
             }
+            clipToOutline = true
         }
         val lp = overlayParams(size, size).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -385,7 +386,7 @@ class CaptureService : Service() {
     private fun chip(label: String, selected: Boolean, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 12f
+            textSize = 12f * fs
             setTextColor(if (selected) Color.WHITE else 0xFFB8C0CC.toInt())
             setPadding(dp(10), dp(5), dp(10), dp(5))
             background = round(if (selected) ACCENT else CHIP, 14)
@@ -398,7 +399,7 @@ class CaptureService : Service() {
     private fun iconButton(label: String, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 15f
+            textSize = 15f * fs
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             background = round(CHIP, 14)
@@ -438,7 +439,8 @@ class CaptureService : Service() {
     private fun showPanel() {
         removePanel()
         val sw = resources.displayMetrics.widthPixels
-        val pw = minOf(dp(264), sw - dp(BUBBLE_DP) - dp(14))
+        val pw = dp(Prefs.panelW(this)).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), sw - dp(8)))
+        fs = (pw.toFloat() / dp(264)).coerceIn(0.9f, 1.4f)
 
         val topics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val tones = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -481,7 +483,7 @@ class CaptureService : Service() {
         }
 
         val note = TextView(this).apply {
-            textSize = 12f
+            textSize = 12f * fs
             setTextColor(0xFFFFD27A.toInt())
             setPadding(0, dp(8), 0, 0)
             visibility = View.GONE
@@ -489,7 +491,7 @@ class CaptureService : Service() {
         noteView = note
 
         val answer = TextView(this).apply {
-            textSize = 13f
+            textSize = 13f * fs
             setTextColor(Color.WHITE)
             setPadding(dp(10), dp(8), dp(10), dp(8))
             background = round(0xFF303847.toInt(), 12)
@@ -503,7 +505,7 @@ class CaptureService : Service() {
         // Campo para perguntar ou pedir algo à IA
         val ask = EditText(ContextThemeWrapper(this, android.R.style.Theme_DeviceDefault)).apply {
             hint = "Pergunte ou peça algo à IA…"
-            textSize = 13f
+            textSize = 13f * fs
             setTextColor(Color.WHITE)
             setHintTextColor(0xFF8D96A3.toInt())
             background = round(CHIP, 14)
@@ -546,7 +548,7 @@ class CaptureService : Service() {
         teachRow = teach
 
         val status = TextView(this).apply {
-            textSize = 12f
+            textSize = 12f * fs
             setTextColor(0xFF8D96A3.toInt())
             setPadding(0, dp(8), 0, 0)
         }
@@ -554,7 +556,7 @@ class CaptureService : Service() {
 
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         resultsView = results
-        val scroll = MaxHeightScrollView(this, dp(250)).apply {
+        val scroll = MaxHeightScrollView(this, dp(Prefs.listH(this))).apply {
             isVerticalScrollBarEnabled = false
             addView(results)
         }
@@ -586,6 +588,52 @@ class CaptureService : Service() {
         val lp = overlayParams(pw, WindowManager.LayoutParams.WRAP_CONTENT).apply {
             gravity = Gravity.TOP or Gravity.START
         }
+
+        // Alça de redimensionar: fica no canto oposto à bolha
+        val bl0 = bubbleLp
+        val panelOnRight = bl0 == null || bl0.x + dp(BUBBLE_DP) / 2 < sw / 2
+        val grip = TextView(this).apply {
+            text = if (panelOnRight) "◢" else "◣"
+            textSize = 16f
+            setTextColor(0xFF8D96A3.toInt())
+            setPadding(dp(14), dp(4), dp(14), dp(2))
+        }
+        var gx = 0f
+        var gy = 0f
+        var gw = 0
+        var gh = 0
+        grip.setOnTouchListener { _, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    gx = e.rawX; gy = e.rawY
+                    gw = lp.width; gh = scroll.maxHeight
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val m = resources.displayMetrics
+                    val dx = (e.rawX - gx).toInt() * (if (panelOnRight) 1 else -1)
+                    lp.width = (gw + dx).coerceIn(dp(MIN_W_DP), maxOf(dp(MIN_W_DP), m.widthPixels - dp(8)))
+                    scroll.maxHeight = (gh + (e.rawY - gy).toInt())
+                        .coerceIn(dp(90), maxOf(dp(90), (m.heightPixels * 0.7f).toInt()))
+                    scroll.requestLayout()
+                    placePanel(lp, root.height)
+                    runCatching { wm.updateViewLayout(root, lp) }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val d = resources.displayMetrics.density
+                    Prefs.savePanelSize(this, (lp.width / d).toInt(), (scroll.maxHeight / d).toInt())
+                    main.post { rebuildPanel() }
+                    true
+                }
+                else -> false
+            }
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = if (panelOnRight) Gravity.END else Gravity.START
+            addView(grip)
+        })
         panel = root
         panelLp = lp
         renderChips()
@@ -690,7 +738,7 @@ class CaptureService : Service() {
     private fun actionPill(label: String, primary: Boolean, onClick: () -> Unit): TextView =
         TextView(this).apply {
             text = label
-            textSize = 12f
+            textSize = 12f * fs
             setTextColor(Color.WHITE)
             setPadding(dp(12), dp(5), dp(12), dp(5))
             background = round(if (primary) ACCENT else 0xFF3A4250.toInt(), 13)
@@ -704,7 +752,7 @@ class CaptureService : Service() {
     private fun replyCard(text: String): View {
         val body = TextView(this).apply {
             this.text = text
-            textSize = 14f
+            textSize = 14f * fs
             setTextColor(Color.WHITE)
             setOnClickListener {
                 if (ReplyAccessibilityService.insert(text)) {
@@ -741,11 +789,38 @@ class CaptureService : Service() {
         }
     }
 
+    /** Remonta a telinha no tamanho novo (letras acompanham), sem chamar a IA de novo. */
+    private fun rebuildPanel() {
+        if (panel == null) return
+        val keepAsk = askView?.text?.toString().orEmpty()
+        val keep = lastResult
+        showPanel()
+        askView?.setText(keepAsk)
+        if (keep != null) render(keep) else generate()
+    }
+
+    private fun render(r: AiClient.Suggestions) {
+        val results = resultsView ?: return
+        lastResult = r
+        results.removeAllViews()
+        setStatus("")
+        noteView?.let {
+            it.text = r.reading
+            it.visibility = if (r.reading.isNotEmpty()) View.VISIBLE else View.GONE
+        }
+        answerView?.let {
+            it.text = r.answer
+            it.visibility = if (r.answer.isNotEmpty()) View.VISIBLE else View.GONE
+        }
+        r.options.forEach { results.addView(replyCard(it)) }
+    }
+
     private fun generate() {
         val results = resultsView ?: return
         val note = noteView ?: return
         val answer = answerView ?: return
         job?.cancel()
+        lastResult = null
         results.removeAllViews()
         note.visibility = View.GONE
         answer.visibility = View.GONE
@@ -773,16 +848,7 @@ class CaptureService : Service() {
             try {
                 val r = withContext(Dispatchers.IO) { AiClient.replies(key, shot, q) }
                 if (panel == null || resultsView !== results) return@launch
-                setStatus("")
-                if (r.reading.isNotEmpty()) {
-                    note.text = r.reading
-                    note.visibility = View.VISIBLE
-                }
-                if (r.answer.isNotEmpty()) {
-                    answer.text = r.answer
-                    answer.visibility = View.VISIBLE
-                }
-                r.options.forEach { results.addView(replyCard(it)) }
+                render(r)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -882,7 +948,7 @@ class CaptureService : Service() {
 }
 
 /** ScrollView que cresce com o conteúdo até um limite. */
-class MaxHeightScrollView(context: Context, private val maxHeight: Int) : ScrollView(context) {
+class MaxHeightScrollView(context: Context, var maxHeight: Int) : ScrollView(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(
             widthMeasureSpec,
