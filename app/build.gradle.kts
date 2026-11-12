@@ -11,17 +11,26 @@ android {
         applicationId = "com.meuteclado"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.9"
+        versionCode = 10
+        versionName = "1.0"
     }
 
-    // Chave fixa: assim cada APK novo instala por cima do anterior, sem desinstalar.
+    // Chave fixa: cada APK novo instala por cima do anterior, sem desinstalar.
     signingConfigs {
-        getByName("debug") {
+        create("fixed") {
             storeFile = rootProject.file("resposta-ia.jks")
             storePassword = "respostaia"
             keyAlias = "respostaia"
             keyPassword = "respostaia"
+        }
+    }
+
+    buildTypes {
+        // Build de release (não "debug"): tira a flag debuggable, que os antivírus marcam.
+        getByName("release") {
+            isDebuggable = false
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("fixed")
         }
     }
 
