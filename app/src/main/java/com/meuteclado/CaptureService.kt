@@ -60,6 +60,7 @@ class CaptureService : Service() {
     private var vDisplay: VirtualDisplay? = null
     private var bubble: View? = null
     private var panel: View? = null
+    private var bubbleLp: WindowManager.LayoutParams? = null
 
     @Volatile private var wantShot: ((Bitmap) -> Unit)? = null
     private var lastShot: String? = null
@@ -209,11 +210,15 @@ class CaptureService : Service() {
         }
         wm.addView(tv, lp)
         bubble = tv
+        bubbleLp = lp
     }
 
     private fun onBubbleTap() {
         val bub = bubble ?: return
-        removePanel()
+        if (panel != null) {
+            removePanel()
+            return
+        }
         bub.visibility = View.INVISIBLE  // some da captura para não aparecer no print
         wantShot = { bmp ->
             bub.visibility = View.VISIBLE
@@ -285,7 +290,31 @@ class CaptureService : Service() {
 
         wm.addView(root, lp)
         panel = root
+        // Traz a bolha de volta para o topo, para ela continuar arrastável
+        val b = bubble
+        val blp = bubbleLp
+        if (b != null && blp != null) {
+            runCatching { wm.removeView(b) }
+            wm.addView(b, blp)
+        }
     }
+
+    private fun balloon(text: String, onClick: (() -> Unit)? = null): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = 15f
+            setTextColor(Color.rgb(20, 20, 20))
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = GradientDrawable().apply {
+                setColor(if (onClick != null) Color.rgb(225, 240, 255) else Color.rgb(238, 238, 238))
+                cornerRadius = dp(18).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, dp(6), dp(40), dp(6)) }
+            if (onClick != null) setOnClickListener { onClick() }
+        }
 
     private fun generate(tone: String, status: TextView, results: LinearLayout) {
         val shot = lastShot ?: return
@@ -297,24 +326,24 @@ class CaptureService : Service() {
         val topic = selectedTopic
         status.text = "Gerando ($topic · $tone)..."
         results.removeAllViews()
+        results.addView(balloon("… pensando na resposta"))
         scope.launch {
             try {
                 val options = withContext(Dispatchers.IO) {
                     AiClient.replies(key, shot, topic, tone)
                 }
-                status.text = "Toque numa opção para inserir"
+                results.removeAllViews()
+                status.text = "Toque num balão para inserir"
                 options.forEach { opt ->
-                    results.addView(Button(this@CaptureService).apply {
-                        text = opt
-                        isAllCaps = false
-                        setOnClickListener {
-                            deliver(opt)
-                            removePanel()
-                        }
+                    results.addView(balloon(opt) {
+                        deliver(opt)
+                        removePanel()
                     })
                 }
             } catch (e: Exception) {
-                status.text = "Erro: ${e.message}"
+                results.removeAllViews()
+                results.addView(balloon("Erro: ${e.message}"))
+                status.text = ""
             }
         }
     }
