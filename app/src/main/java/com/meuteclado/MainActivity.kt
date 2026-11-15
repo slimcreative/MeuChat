@@ -182,7 +182,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            addView(label("Resposta IA", 22f, Color.WHITE, true))
+            addView(label("Fox IA", 22f, Color.WHITE, true))
             addView(status)
         }
         val gear = label("⚙", 24f, Color.WHITE).apply {

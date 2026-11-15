@@ -42,5 +42,5 @@ jobs:
         run: |
           TAG="teclado-build-${{ github.run_number }}"
           gh release create "$TAG" app/build/outputs/apk/release/app-release.apk \
-            --draft --target "$GITHUB_SHA" --title "Resposta IA $TAG" \
+            --draft --target "$GITHUB_SHA" --title "Fox IA $TAG" \
             --notes "APK release assinado, gerado pelo workflow build-apk."

@@ -1,4 +1,4 @@
-# Resposta IA (MVP)
+# Fox IA (MVP)
 
 Bolha flutuante que lê a tela sob demanda, pede respostas à IA por tema e tom, e insere (ou copia) a resposta no campo.
 

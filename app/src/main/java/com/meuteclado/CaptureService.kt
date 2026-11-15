@@ -946,7 +946,7 @@ class CaptureService : Service() {
         }
         val key = Prefs.apiKey(this)
         if (key.isBlank()) {
-            setStatus("Abra o app Resposta IA e salve a chave da API.")
+            setStatus("Abra o app Fox IA e salve a chave da API.")
             return
         }
         val mode = Prefs.mode(this)
@@ -1030,7 +1030,7 @@ class CaptureService : Service() {
 
     private fun createChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "Resposta IA", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, "Fox IA", NotificationManager.IMPORTANCE_LOW)
         )
     }
 
@@ -1041,7 +1041,7 @@ class CaptureService : Service() {
             PendingIntent.FLAG_IMMUTABLE
         )
         return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Resposta IA ativa")
+            .setContentTitle("Fox IA ativa")
             .setContentText("A bolha aparece nos apps escolhidos")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .addAction(
