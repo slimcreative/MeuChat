@@ -3,6 +3,7 @@ package com.meuteclado
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -17,6 +18,9 @@ import android.view.accessibility.AccessibilityWindowInfo
  * Coloca o texto no campo de mensagem do app aberto e, se pedido, toca no botão de enviar.
  * Se não estiver ativo, o app copia a resposta para a área de transferência.
  */
+/** Uma mensagem lida da tela: mine = enviada pelo usuário (lado direito). */
+class ChatLine(val mine: Boolean, val text: String)
+
 class ReplyAccessibilityService : AccessibilityService() {
 
     companion object {
@@ -56,6 +60,13 @@ class ReplyAccessibilityService : AccessibilityService() {
                 false
             }
         }
+
+        /**
+         * Mensagens de texto visíveis na conversa aberta, de cima para baixo, com o lado medido
+         * pela posição do balão na tela (direita = usuário). Vazio se o app não expõe as mensagens.
+         */
+        fun readChat(): List<ChatLine> =
+            runCatching { instance?.collectChat() }.getOrNull() ?: emptyList()
 
         /** Só coloca o texto no campo. */
         fun insert(text: String): Boolean = instance?.setText(text) ?: false
@@ -101,6 +112,31 @@ class ReplyAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         return super.onUnbind(intent)
+    }
+
+    private fun collectChat(): List<ChatLine> {
+        val root = appRoot() ?: return emptyList()
+        val sw = resources.displayMetrics.widthPixels
+        val found = ArrayList<Pair<Int, ChatLine>>()
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var seen = 0
+        val r = Rect()
+        while (queue.isNotEmpty() && seen < 4000) {
+            val n = queue.removeFirst()
+            seen++
+            val id = (n.viewIdResourceName ?: "").substringAfterLast('/').lowercase()
+            // Só o texto do balão: ignora citações (quoted_*), nomes, horários e o campo de digitar
+            val isMessage = (id.contains("message_text") || id.contains("text_message")) && !id.contains("quot")
+            val text = n.text?.toString()?.trim().orEmpty()
+            if (isMessage && !n.isEditable && n.isVisibleToUser && text.isNotEmpty()) {
+                n.getBoundsInScreen(r)
+                val mine = (sw - r.right) < r.left   // mais encostado na direita = mensagem do usuário
+                found.add(r.top to ChatLine(mine, text.take(400)))
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return found.sortedBy { it.first }.map { it.second }.takeLast(14)
     }
 
     /** Janela do app de conversa: nunca a nossa própria telinha. */

@@ -17,7 +17,8 @@ object AiClient {
     /** Tudo que define um pedido: modo, tema, tom, estilo do usuário e o que ele digitou. */
     class Query(
         val mode: String, val topic: String, val tone: String, val style: String, val ask: String,
-        val rules: Set<String>, val avoid: String, val best: Boolean
+        val rules: Set<String>, val avoid: String, val best: Boolean,
+        val chat: List<ChatLine>
     )
 
     /** A API respondeu 200, mas sem conteúdo aproveitável (recusa, corte, vazio). */
@@ -83,7 +84,7 @@ object AiClient {
                 .put("data", imageB64))
         val text = JSONObject()
             .put("type", "text")
-            .put("text", Prompts.build(q.mode, q.topic, q.tone, q.ask, jsonMode = !useTool))
+            .put("text", Prompts.build(q.mode, q.topic, q.tone, q.ask, q.chat, jsonMode = !useTool))
 
         val payload = JSONObject()
             .put("model", model)

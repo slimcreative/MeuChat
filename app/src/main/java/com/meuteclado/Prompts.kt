@@ -118,8 +118,10 @@ object Prompts {
         "Um balão pode trazer no topo um bloco de citação, que é a mensagem antiga sendo respondida, com o rótulo 'Você' ou um nome: " +
         "isso é só referência, não é mensagem nova e não muda quem enviou o balão. " +
         "Nunca trate uma mensagem da direita como se fosse da outra pessoa, e nunca responda a uma mensagem do próprio usuário. " +
-        "Se a última mensagem da conversa for do usuário, a pessoa ainda não respondeu: sugira uma continuação natural " +
-        "(sem cobrar resposta) ou, se insistir for pior, diga em 'resposta' que vale esperar.\n" +
+        "O ALVO da resposta é sempre a ÚLTIMA MENSAGEM DA OUTRA PESSOA (esquerda). As mensagens do usuário servem só de contexto: " +
+        "se ele já escreveu algo depois dela, leve isso em conta para não repetir, mas continue respondendo ao que ELA disse por último. " +
+        "Quando o pedido vier com uma transcrição lida pelo app, os lados dessa transcrição estão certos (foram medidos pela posição na tela): " +
+        "confie nela acima da sua leitura visual.\n" +
         "COMO ESCREVER: as sugestões precisam parecer escritas pelo próprio usuário. Observe as mensagens dele (direita) e imite o jeito dele " +
         "(tamanho, gírias, abreviações, pontuação, maiúsculas e minúsculas, emojis, risadas), a não ser que o modo peça outro registro. " +
         "Português do Brasil, como uma pessoa real digita no celular. Acompanhe o tamanho das mensagens da conversa. " +
@@ -144,7 +146,31 @@ object Prompts {
         return sb.toString()
     }
 
-    fun build(modeName: String, topic: String, tone: String, ask: String, jsonMode: Boolean): String {
+    /** Bloco com a conversa lida pelo app (lados certos) e a mensagem que deve ser respondida. */
+    private fun chatBlock(chat: List<ChatLine>, withTarget: Boolean): String {
+        if (chat.isEmpty()) return ""
+        val sb = StringBuilder("TRANSCRIÇÃO LIDA PELO APP (lados medidos pela posição do balão, confiáveis; só mensagens de texto):")
+        chat.forEach { sb.append("\n").append(if (it.mine) "EU: " else "ELA: ").append(it.text) }
+        if (withTarget) {
+            val lastTheirs = chat.indexOfLast { !it.mine }
+            if (lastTheirs >= 0) {
+                // junta as mensagens seguidas dela no último turno
+                var from = lastTheirs
+                while (from > 0 && !chat[from - 1].mine) from--
+                val target = chat.subList(from, lastTheirs + 1).joinToString(" / ") { it.text }
+                sb.append("\nALVO: responda a esta, que é a última mensagem de texto DELA: «").append(target).append("».")
+                if (lastTheirs < chat.size - 1) {
+                    sb.append(" O usuário já escreveu depois disso; não responda à mensagem dele, e não repita o que ele já disse.")
+                }
+            } else {
+                sb.append("\nNão há mensagem de texto dela visível; veja no print se ela mandou foto, áudio ou figurinha.")
+            }
+            sb.append("\nSe o print mostrar algo mais recente dela que não é texto (foto, áudio, figurinha), considere isso também.")
+        }
+        return sb.toString()
+    }
+
+    fun build(modeName: String, topic: String, tone: String, ask: String, chat: List<ChatLine>, jsonMode: Boolean): String {
         val m = mode(modeName)
         val task = m.topics[topic] ?: m.topics.values.first()
         val out = if (jsonMode)
@@ -165,6 +191,7 @@ object Prompts {
                 "Se o print mostrar com quem é a conversa ou um histórico, personalize (nome, último assunto, tempo sem se falar). " +
                     "Se não mostrar conversa nenhuma, escreva boas aberturas mesmo assim e deixe 'leitura' vazio.",
                 "Tom: $tone.",
+                chatBlock(chat, withTarget = false),
                 extra,
                 out
             ).filter { it.isNotEmpty() }.joinToString("\n")
@@ -174,6 +201,7 @@ object Prompts {
             "1) Leia as últimas mensagens, separe pelo lado quem disse o quê e entenda o que a outra pessoa (esquerda) quer ou sente.",
             "2) Tarefa: $task",
             "3) Tom: $tone.",
+            chatBlock(chat, withTarget = true),
             extra,
             out,
             "Se o print não mostrar uma conversa de chat, não invente: deixe 'options' vazio, 'leitura' vazio e diga isso em 'resposta' em uma frase curta."

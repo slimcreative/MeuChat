@@ -113,6 +113,7 @@ class CaptureService : Service() {
     private var latest: Image? = null
     private var capturing = false
     private var hiddenByApp = false
+    private var lastChat: List<ChatLine> = emptyList()
     private var lastShot: String? = null
     private var lastThumb: Bitmap? = null
     private var shotBlack = false
@@ -382,6 +383,8 @@ class CaptureService : Service() {
     }
 
     private fun setShot(bmp: Bitmap) {
+        // Lê as mensagens direto do app, com o lado certo de cada uma
+        lastChat = ReplyAccessibilityService.readChat()
         shotBlack = isMostlyBlack(bmp)
         lastShot = toJpegB64(bmp)
         val tw = dp(92)
@@ -914,8 +917,15 @@ class CaptureService : Service() {
         }
         r.options.forEach { results.addView(replyCard(it)) }
         seenView?.let {
-            it.text = if (r.seen.isEmpty()) "" else "Como eu li:\n" + r.seen.joinToString("\n")
-            val show = thumbView?.visibility == View.VISIBLE && r.seen.isNotEmpty()
+            val lines = if (lastChat.isNotEmpty())
+                lastChat.takeLast(8).map { (if (it.mine) "EU: " else "ELA: ") + it.text.take(80) }
+            else r.seen
+            it.text = when {
+                lines.isEmpty() -> ""
+                lastChat.isNotEmpty() -> "Lido direto do app:\n" + lines.joinToString("\n")
+                else -> "Como a IA leu o print:\n" + lines.joinToString("\n")
+            }
+            val show = thumbView?.visibility == View.VISIBLE && lines.isNotEmpty()
             it.visibility = if (show) View.VISIBLE else View.GONE
         }
     }
@@ -949,7 +959,8 @@ class CaptureService : Service() {
         val tone = Prefs.tone(this)
         val q = AiClient.Query(
             mode, topic, tone, Prefs.style(this), askView?.text?.toString().orEmpty().trim(),
-            Prefs.rules(this), Prefs.avoid(this), Prefs.best(this)
+            Prefs.rules(this), Prefs.avoid(this), Prefs.best(this),
+            lastChat
         )
         setStatus("Lendo a conversa… · modo $mode")
         job = scope.launch {
