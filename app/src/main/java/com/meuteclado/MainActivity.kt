@@ -152,12 +152,7 @@ class MainActivity : Activity() {
 
     private fun fox(sizeDp: Int) = ImageView(this).apply {
         setImageResource(R.drawable.fox_bubble)
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(0xFF1A1438.toInt())
-        }
-        clipToOutline = true
+        scaleType = ImageView.ScaleType.FIT_CENTER
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 

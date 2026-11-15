@@ -77,7 +77,7 @@ class CaptureService : Service() {
         fun hideForApp() {
             instance?.setBubbleShown(false)
         }
-        private const val BUBBLE_DP = 52
+        private const val BUBBLE_DP = 58
         private const val MIN_W_DP = 220
         private const val ACCENT = 0xFF1E88E5.toInt()
         private const val CHIP = 0xFF2A303C.toInt()
@@ -299,12 +299,7 @@ class CaptureService : Service() {
         val size = dp(BUBBLE_DP)
         val tv = ImageView(this).apply {
             setImageResource(R.drawable.fox_bubble)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xFF1A1438.toInt())
-            }
-            clipToOutline = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
         }
         val lp = overlayParams(size, size).apply {
             gravity = Gravity.TOP or Gravity.START
