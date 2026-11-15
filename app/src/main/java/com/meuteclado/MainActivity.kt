@@ -40,6 +40,7 @@ class MainActivity : Activity() {
     private lateinit var permStatus: TextView
     private lateinit var keyField: EditText
     private lateinit var styleField: EditText
+    private lateinit var avoidField: EditText
     private lateinit var a11yCard: View
     private lateinit var appsCard: TextView
     private var appsView: View? = null
@@ -115,6 +116,38 @@ class MainActivity : Activity() {
         setHintTextColor(MUTED)
         background = round(FIELD, 12)
         setPadding(dp(14), dp(12), dp(14), dp(12))
+    }
+
+    /** Linha com chave liga/desliga. */
+    private fun toggleRow(text: String, get: () -> Boolean, set: (Boolean) -> Unit): View {
+        val mark = label("", 15f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(30), dp(30))
+        }
+        fun paint() {
+            val on = get()
+            mark.text = if (on) "✓" else ""
+            mark.background = round(if (on) ACCENT else FIELD, 15)
+        }
+        paint()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(14), dp(12))
+            background = round(CARD, 14)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, dp(8)) }
+            addView(label(text, 15f, Color.WHITE).apply {
+                setPadding(0, 0, dp(10), 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(mark)
+            setOnClickListener {
+                set(!get())
+                paint()
+            }
+        }
     }
 
     private fun fox(sizeDp: Int) = ImageView(this).apply {
@@ -260,6 +293,14 @@ class MainActivity : Activity() {
             maxLines = 10
             gravity = Gravity.TOP
         }
+        avoidField = field("O que você não quer nas respostas?").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            minLines = 3
+            maxLines = 10
+            gravity = Gravity.TOP
+            setText(Prefs.avoid(this@MainActivity))
+        }
         permStatus = label("", 14f, Color.WHITE)
         appsCard = pill("", FIELD) { showApps() }
         val back = label("←  Configurações", 20f, Color.WHITE, true).apply {
@@ -268,6 +309,27 @@ class MainActivity : Activity() {
         }
         return page(column().apply {
             addView(back)
+
+            addView(section("ESTILO DAS RESPOSTAS"))
+            Prompts.rules.forEach { (key, pair) ->
+                addView(toggleRow(pair.first,
+                    { key in Prefs.rules(this@MainActivity) },
+                    { on -> Prefs.setRule(this@MainActivity, key, on) }))
+            }
+            addView(toggleRow("Respostas mais caprichadas (mais lento, gasta mais da API)",
+                { Prefs.best(this@MainActivity) },
+                { on -> Prefs.setBest(this@MainActivity, on) }))
+
+            addView(section("O QUE A IA NUNCA DEVE FAZER"))
+            addView(label(
+                "Uma regra por linha. Ex.: não perguntar o que ela tá fazendo · não usar 'linda' · não falar de trabalho · não mandar bom dia.",
+                13f, MUTED
+            ).apply { setPadding(dp(4), 0, 0, dp(10)) })
+            addView(avoidField)
+            addView(pill("Salvar", ACCENT) {
+                Prefs.saveAvoid(this@MainActivity, avoidField.text.toString())
+                toast("Salvo")
+            })
 
             addView(section("MEU JEITO DE RESPONDER"))
             addView(label(

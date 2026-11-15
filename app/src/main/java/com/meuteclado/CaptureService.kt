@@ -99,6 +99,7 @@ class CaptureService : Service() {
     private var topicRow: LinearLayout? = null
     private var toneRow: LinearLayout? = null
     private var thumbView: ImageView? = null
+    private var seenView: TextView? = null
     private var noteView: TextView? = null
     private var statusView: TextView? = null
     private var resultsView: LinearLayout? = null
@@ -524,11 +525,20 @@ class CaptureService : Service() {
                 .apply { setMargins(0, dp(8), 0, 0) }
         }
         thumbView = thumb
+        // Com o olho ligado: como a IA separou as mensagens (ELA = esquerda, EU = direita)
+        val seen = TextView(this).apply {
+            textSize = 11f * fs
+            setTextColor(0xFF9AA4B2.toInt())
+            setPadding(0, dp(6), 0, 0)
+            visibility = View.GONE
+        }
+        seenView = seen
 
         lateinit var eye: TextView
         eye = iconButton("👁") {
             val show = thumb.visibility != View.VISIBLE
             thumb.visibility = if (show) View.VISIBLE else View.GONE
+            seen.visibility = if (show && seen.text.isNotEmpty()) View.VISIBLE else View.GONE
             eye.alpha = if (show) 1f else 0.45f
             Prefs.saveShowThumb(this, show)
         }
@@ -653,6 +663,7 @@ class CaptureService : Service() {
             addView(askRow)
             addView(teach)
             addView(thumb)
+            addView(seen)
             addView(note)
             addView(answer)
             addView(status)
@@ -907,6 +918,11 @@ class CaptureService : Service() {
             it.visibility = if (r.answer.isNotEmpty()) View.VISIBLE else View.GONE
         }
         r.options.forEach { results.addView(replyCard(it)) }
+        seenView?.let {
+            it.text = if (r.seen.isEmpty()) "" else "Como eu li:\n" + r.seen.joinToString("\n")
+            val show = thumbView?.visibility == View.VISIBLE && r.seen.isNotEmpty()
+            it.visibility = if (show) View.VISIBLE else View.GONE
+        }
     }
 
     private fun generate() {
@@ -936,7 +952,10 @@ class CaptureService : Service() {
         val mode = Prefs.mode(this)
         val topic = Prefs.topic(this)
         val tone = Prefs.tone(this)
-        val q = AiClient.Query(mode, topic, tone, Prefs.style(this), askView?.text?.toString().orEmpty().trim())
+        val q = AiClient.Query(
+            mode, topic, tone, Prefs.style(this), askView?.text?.toString().orEmpty().trim(),
+            Prefs.rules(this), Prefs.avoid(this), Prefs.best(this)
+        )
         setStatus("Lendo a conversa… · modo $mode")
         job = scope.launch {
             try {
@@ -987,6 +1006,7 @@ class CaptureService : Service() {
         topicRow = null
         toneRow = null
         thumbView = null
+        seenView = null
         noteView = null
         statusView = null
         resultsView = null

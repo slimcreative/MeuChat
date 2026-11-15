@@ -11,8 +11,8 @@ android {
         applicationId = "com.meuteclado"
         minSdk = 29
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0"
+        versionCode = 11
+        versionName = "1.1"
     }
 
     // Chave fixa: cada APK novo instala por cima do anterior, sem desinstalar.

@@ -91,19 +91,54 @@ object Prompts {
 
     fun mode(name: String): Mode = modes[name] ?: modes.getValue(DEFAULT_MODE)
 
-    private const val BASE =
-        "Você ajuda o usuário a escrever mensagens em conversas de chat. Você recebe um print da conversa. " +
-        "As mensagens do usuário ficam à direita; as da outra pessoa, à esquerda. " +
-        "As sugestões precisam parecer escritas pelo próprio usuário: observe as mensagens dele no print e imite o jeito dele " +
-        "(tamanho das mensagens, gírias, abreviações, pontuação, maiúsculas e minúsculas, emojis, risadas), " +
-        "a não ser que o contexto do modo peça outro registro. Português do Brasil, como uma pessoa real digita no celular. " +
-        "Nada de mentira, ameaça, pressão ou insistência. " +
-        "Se a pessoa demonstrar desinteresse ou disser não, a melhor resposta respeita isso."
+    /** Ajustes de estilo que o usuário liga e desliga nas Configurações: chave -> (nome, instrução). */
+    val rules: LinkedHashMap<String, Pair<String, String>> = linkedMapOf(
+        "humano" to ("Mais humano, menos engessado" to
+            "Escreva como gente de verdade no WhatsApp: frase solta, natural, pode ser incompleta, do jeito que sai na hora. " +
+            "Proibido soar como texto pronto, atendimento ou coach: nada de frase de efeito, conselho, entusiasmo forçado, " +
+            "'que legal!', 'adorei saber', 'fico feliz', 'espero que'. Mensagem curta não leva ponto final."),
+        "sem_perguntas" to ("Não fazer perguntas" to
+            "Não faça perguntas à pessoa e não termine a mensagem com pergunta. Comente, reaja ou afirme. " +
+            "Só pergunte se o usuário pedir isso no campo de texto."),
+        "curtas" to ("Respostas curtas" to
+            "Cada mensagem tem no máximo uma linha curta, até umas 12 palavras."),
+        "sem_emoji" to ("Sem emoji" to "Não use emoji nem emoticon."),
+        "sem_elogio" to ("Sem elogio e sem bajular" to
+            "Não elogie a pessoa, não bajule e não concorde só para agradar."),
+        "sem_desculpa" to ("Sem se explicar nem pedir desculpa" to
+            "Não se justifique, não peça desculpas e não explique demais.")
+    )
+    val defaultRules: Set<String> = setOf("humano")
 
-    fun system(modeName: String, style: String): String {
-        val sb = StringBuilder(BASE).append(' ').append(mode(modeName).style)
+    private const val BASE =
+        "Você ajuda o usuário a escrever mensagens em conversas de chat. Você recebe um print da conversa.\n" +
+        "COMO LER O PRINT: balões encostados na ESQUERDA são da OUTRA PESSOA. Balões encostados na DIREITA são do USUÁRIO " +
+        "(mensagens que ele mesmo enviou, normalmente com os tiquinhos de entrega e outra cor). " +
+        "O lado do balão é a única coisa que define quem enviou. " +
+        "Um balão pode trazer no topo um bloco de citação, que é a mensagem antiga sendo respondida, com o rótulo 'Você' ou um nome: " +
+        "isso é só referência, não é mensagem nova e não muda quem enviou o balão. " +
+        "Nunca trate uma mensagem da direita como se fosse da outra pessoa, e nunca responda a uma mensagem do próprio usuário. " +
+        "Se a última mensagem da conversa for do usuário, a pessoa ainda não respondeu: sugira uma continuação natural " +
+        "(sem cobrar resposta) ou, se insistir for pior, diga em 'resposta' que vale esperar.\n" +
+        "COMO ESCREVER: as sugestões precisam parecer escritas pelo próprio usuário. Observe as mensagens dele (direita) e imite o jeito dele " +
+        "(tamanho, gírias, abreviações, pontuação, maiúsculas e minúsculas, emojis, risadas), a não ser que o modo peça outro registro. " +
+        "Português do Brasil, como uma pessoa real digita no celular. Acompanhe o tamanho das mensagens da conversa. " +
+        "As opções têm que ser diferentes de verdade entre si (uma bem curta, uma média, uma por outro ângulo) e não podem começar todas igual. " +
+        "Não use travessão nem ponto e vírgula. Responda ao que a pessoa disse de fato, sem mudar de assunto e sem inventar coisas que não estão na conversa.\n" +
+        "Nada de mentira, ameaça, pressão ou insistência. Se a pessoa demonstrar desinteresse ou disser não, a melhor resposta respeita isso."
+
+    fun system(modeName: String, style: String, activeRules: Set<String>, avoid: String): String {
+        val sb = StringBuilder(BASE).append("\n").append(mode(modeName).style)
+        val on = rules.filterKeys { it in activeRules }.values.map { it.second }
+        if (on.isNotEmpty()) {
+            sb.append("\nAJUSTES LIGADOS PELO USUÁRIO (obrigatórios em todas as sugestões):")
+            on.forEach { sb.append("\n- ").append(it) }
+        }
+        if (avoid.isNotBlank()) {
+            sb.append("\nO QUE O USUÁRIO NÃO QUER NAS SUGESTÕES (nunca faça):\n").append(avoid.trim())
+        }
         if (style.isNotBlank()) {
-            sb.append(" Instruções do próprio usuário sobre o jeito dele de escrever. Siga à risca em todas as sugestões, elas valem mais que qualquer outra regra de estilo:\n")
+            sb.append("\nJEITO DE ESCREVER DO USUÁRIO, nas palavras dele. Siga à risca, vale mais que qualquer outra regra de estilo:\n")
             sb.append(style.trim())
         }
         return sb.toString()
@@ -113,9 +148,9 @@ object Prompts {
         val m = mode(modeName)
         val task = m.topics[topic] ?: m.topics.values.first()
         val out = if (jsonMode)
-            "Responda APENAS com JSON, sem texto antes ou depois: {\"leitura\": \"...\", \"resposta\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}"
+            "Responda APENAS com JSON, sem texto antes ou depois: {\"ultimas\": [\"ELA: ...\", \"EU: ...\"], \"leitura\": \"...\", \"resposta\": \"...\", \"options\": [\"...\", \"...\", \"...\"]}"
         else
-            "Entregue pela ferramenta: 'leitura' com uma frase curta sobre o que a pessoa quis dizer e 'options' com 3 mensagens diferentes entre si."
+            "Entregue pela ferramenta. Primeiro preencha 'ultimas' com as últimas mensagens visíveis, em ordem, marcando quem enviou pelo lado do balão. Depois 'leitura' com uma frase curta sobre o que a pessoa quis dizer e 'options' com 3 mensagens diferentes entre si."
         val extra = if (ask.isBlank()) "" else
             "O usuário escreveu para você: «" + ask.trim() + "». " +
             "Se for uma pergunta ou um pedido de opinião, responda em 'resposta', direto e prático, em até 4 frases, " +
@@ -136,7 +171,7 @@ object Prompts {
         }
         return listOf(
             "Este é o print da conversa.",
-            "1) Leia as últimas mensagens e entenda o que a outra pessoa quer ou sente.",
+            "1) Leia as últimas mensagens, separe pelo lado quem disse o quê e entenda o que a outra pessoa (esquerda) quer ou sente.",
             "2) Tarefa: $task",
             "3) Tom: $tone.",
             extra,

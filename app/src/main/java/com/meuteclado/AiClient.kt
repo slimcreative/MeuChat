@@ -12,18 +12,21 @@ import java.util.concurrent.TimeUnit
 object AiClient {
 
     /** Sugestões prontas + leitura opcional do que a pessoa quis dizer. */
-    class Suggestions(val options: List<String>, val reading: String, val answer: String)
+    class Suggestions(val options: List<String>, val reading: String, val answer: String, val seen: List<String>)
 
     /** Tudo que define um pedido: modo, tema, tom, estilo do usuário e o que ele digitou. */
-    class Query(val mode: String, val topic: String, val tone: String, val style: String, val ask: String)
+    class Query(
+        val mode: String, val topic: String, val tone: String, val style: String, val ask: String,
+        val rules: Set<String>, val avoid: String, val best: Boolean
+    )
 
     /** A API respondeu 200, mas sem conteúdo aproveitável (recusa, corte, vazio). */
     private class EmptyReply(val reason: String) : IOException(reason)
 
     private class HttpError(val code: Int, val detail: String) : IOException("API $code")
 
-    private const val MODEL = "claude-haiku-5-5"
-    private const val FALLBACK_MODEL = "claude-sonnet-5-5"
+    private const val FAST = "claude-haiku-5-5"
+    private const val BEST = "claude-sonnet-5-5"
     private const val TOOL = "sugerir_respostas"
 
     private val http = OkHttpClient.Builder()
@@ -39,16 +42,18 @@ object AiClient {
      *  3) se vier vazio ou recusado, modelo reserva.
      */
     fun replies(apiKey: String, imageB64: String, q: Query): Suggestions {
+        val model = if (q.best) BEST else FAST
+        val other = if (q.best) FAST else BEST
         try {
             return try {
-                call(apiKey, MODEL, imageB64, q, useTool = true)
+                call(apiKey, model, imageB64, q, useTool = true)
             } catch (e: HttpError) {
                 if (e.code != 400) throw e
-                call(apiKey, MODEL, imageB64, q, useTool = false)
+                call(apiKey, model, imageB64, q, useTool = false)
             }
         } catch (first: EmptyReply) {
             try {
-                return call(apiKey, FALLBACK_MODEL, imageB64, q, useTool = true)
+                return call(apiKey, other, imageB64, q, useTool = true)
             } catch (second: HttpError) {
                 throw IOException(friendly(second))
             } catch (second: EmptyReply) {
@@ -82,8 +87,8 @@ object AiClient {
 
         val payload = JSONObject()
             .put("model", model)
-            .put("max_tokens", 1024)
-            .put("system", Prompts.system(q.mode, q.style))
+            .put("max_tokens", 1600)
+            .put("system", Prompts.system(q.mode, q.style, q.rules, q.avoid))
             .put("messages", JSONArray().put(
                 JSONObject()
                     .put("role", "user")
@@ -154,7 +159,15 @@ object AiClient {
         }
         val answer = obj.optString("resposta").trim()
         if (list.isEmpty() && answer.isEmpty()) return null
-        return Suggestions(list, obj.optString("leitura").trim(), answer)
+        val seen = ArrayList<String>()
+        val u = obj.optJSONArray("ultimas")
+        if (u != null) {
+            for (i in 0 until u.length()) {
+                val t = u.optString(i).trim()
+                if (t.isNotEmpty()) seen.add(t)
+            }
+        }
+        return Suggestions(list, obj.optString("leitura").trim(), answer, seen)
     }
 
     private fun errorMessage(body: String): String = try {
@@ -169,6 +182,10 @@ object AiClient {
         .put("input_schema", JSONObject()
             .put("type", "object")
             .put("properties", JSONObject()
+                .put("ultimas", JSONObject()
+                    .put("type", "array")
+                    .put("description", "As últimas mensagens visíveis no print (até 8), em ordem, de cima para baixo. Cada item começa com 'ELA: ' se o balão está na ESQUERDA (outra pessoa) ou 'EU: ' se está na DIREITA (usuário). Ignore blocos de citação dentro dos balões. Vazio se não houver conversa.")
+                    .put("items", JSONObject().put("type", "string")))
                 .put("leitura", JSONObject()
                     .put("type", "string")
                     .put("description", "Uma frase curta: o que a outra pessoa quis dizer ou está sentindo."))
@@ -179,5 +196,5 @@ object AiClient {
                     .put("type", "array")
                     .put("description", "Mensagens diferentes entre si, prontas para enviar. Normalmente 3.")
                     .put("items", JSONObject().put("type", "string"))))
-            .put("required", JSONArray().put("options")))
+            .put("required", JSONArray().put("ultimas").put("options")))
 }

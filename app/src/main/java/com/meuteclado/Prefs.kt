@@ -51,6 +51,23 @@ object Prefs {
         saveStyle(c, if (cur.isEmpty()) line.trim() else cur + "\n" + line.trim())
     }
 
+    /** Ajustes de estilo ligados (chaves de Prompts.rules). */
+    fun rules(c: Context): Set<String> =
+        sp(c).getStringSet("rules", null)?.toSet() ?: Prompts.defaultRules
+    fun setRule(c: Context, key: String, on: Boolean) {
+        val cur = rules(c).toMutableSet()
+        if (on) cur.add(key) else cur.remove(key)
+        sp(c).edit().putStringSet("rules", HashSet(cur)).apply()
+    }
+
+    /** O que a IA nunca deve fazer, nas palavras do usuário. */
+    fun avoid(c: Context): String = sp(c).getString("avoid", "") ?: ""
+    fun saveAvoid(c: Context, v: String) = sp(c).edit().putString("avoid", v.trim().take(1500)).apply()
+
+    /** Usar o modelo mais caprichado (mais lento e mais caro). */
+    fun best(c: Context): Boolean = sp(c).getBoolean("best", false)
+    fun setBest(c: Context, v: Boolean) = sp(c).edit().putBoolean("best", v).apply()
+
     /** Tamanho da telinha, em dp. */
     fun panelW(c: Context): Int = sp(c).getInt("panel_w", 264)
     fun listH(c: Context): Int = sp(c).getInt("list_h", 250)
